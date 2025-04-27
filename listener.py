@@ -41,4 +41,4 @@ def screen():
     return tm.time(), pg.screenshot()
 
 if __name__ == "__main__":
-    pass
+    listening()
