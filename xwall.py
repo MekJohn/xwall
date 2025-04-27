@@ -75,17 +75,17 @@ class Firewall:
 
 
     @staticmethod
-    def _text2dict(text: str):
+    def _rules2dict(text_rules: str):
         # Analizza l'output di netsh
         rules = []
         current_rule = {}
-        for line in output_lines:
+        for line in text_rules:
             if ":" in line:
                 key, value = line.split(":", 1)
-                
+                # init data
                 key = key.strip().lower().replace(" ", "_")  # Pulisce la chiave per il dizionario
                 value = value.strip()
-                
+                # add rule feature to the rule dict
                 current_rule[key] = value
             elif "----" in line:  #fine della regola
                 if current_rule:
@@ -94,7 +94,7 @@ class Firewall:
 
         if current_rule: #aggiunge l'ultima regola
             rules.append(current_rule)
-        return rule_dict
+        return rules
         
 
     @classmethod
@@ -112,22 +112,7 @@ class Firewall:
             output_lines = [line.strip() for line in output.strip().split('\n') if line.strip() != ""]
     
             # Analizza l'output di netsh
-            rules = []
-            current_rule = {}
-            for line in output_lines:
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    key = key.strip().lower().replace(" ", "_")  # Pulisce la chiave per il dizionario
-                    value = value.strip()
-                    current_rule[key] = value
-                elif "----" in line:  #fine della regola
-                    if current_rule:
-                      rules.append(current_rule)
-                    current_rule = {} #resetta il dizionario
-    
-            if current_rule: #aggiunge l'ultima regola
-                rules.append(current_rule)
-            return rules
+            rules = cls._rules2dict(output_lines)
     
         except subprocess.CalledProcessError as e:
             print(f"Errore durante l'esecuzione del comando netsh: {e}")
@@ -135,6 +120,10 @@ class Firewall:
         except Exception as ex:
             print(f"Si è verificato un errore imprevisto: {ex}")
             sys.exit(1)
+        finally:
+            rules = rules if rules is not None else []
+            return rules
+            
 
 
 
@@ -144,12 +133,14 @@ class Firewall:
 if __name__ == "__main__":
     # Verifica i privilegi di amministratore prima di procedere.
     utility.run_as_admin()
+    
+    console_args = sys.argv
 
-    if len(sys.argv) > 1:
+    if len(console_args) > 1:
 
-        folder_path = sys.argv[1]
-        block_exe_traffic(folder_path)
+        path = console_args[1]
+        Firewall.block_traffic(path)
         input("Done. Press to esc..")
     else:
-        print(sys.argv)
-        firewall_rules = list_firewall_rules()
+        print(console_args)
+        firewall_rules = Firewall.listrules()
