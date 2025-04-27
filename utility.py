@@ -1,12 +1,8 @@
 # XWALL 2025
 
-import subprocess
 import sys
 import ctypes
 import pathlib as pt
-import time as tm
-
-import listener
 
 def is_admin():
     """

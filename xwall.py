@@ -7,17 +7,38 @@ import time as tm
 
 import utility
 
-        
-            
-class Firewall:
+
+
+class Netsh:
     
     NETSH_ADDRULE_CMD = ["netsh", "advfirewall", "firewall", "add", "rule"]
     NETSH_LISTRULE_CMD = ["netsh", "advfirewall", "firewall", "show rule", "name=all"]
     
-    def __init__(self):
-        pass
-          
+    @staticmethod
+    def rules_to_dict(text_rules: str):
+        # Analizza l'output di netsh
+        rules = []
+        current_rule = {}
+        for line in text_rules:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                # init data
+                key = key.strip().lower().replace(" ", "_")  # Pulisce la chiave per il dizionario
+                value = value.strip()
+                # add rule feature to the rule dict
+                current_rule[key] = value
+            elif "----" in line:  #fine della regola
+                if current_rule:
+                  rules.append(current_rule)
+                current_rule = {} #resetta il dizionario
     
+        if current_rule: #aggiunge l'ultima regola
+            rules.append(current_rule)
+        return rules
+
+            
+class Firewall:   
+
     @staticmethod
     def block_traffic(path: str, ingoing: bool = True, outgoing: bool = True):
         """
@@ -73,36 +94,15 @@ class Firewall:
             print(f"Si è verificato un errore imprevisto: {ex.with_traceback()}")
             sys.exit(1)
 
-
-    @staticmethod
-    def _rules2dict(text_rules: str):
-        # Analizza l'output di netsh
-        rules = []
-        current_rule = {}
-        for line in text_rules:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                # init data
-                key = key.strip().lower().replace(" ", "_")  # Pulisce la chiave per il dizionario
-                value = value.strip()
-                # add rule feature to the rule dict
-                current_rule[key] = value
-            elif "----" in line:  #fine della regola
-                if current_rule:
-                  rules.append(current_rule)
-                current_rule = {} #resetta il dizionario
-
-        if current_rule: #aggiunge l'ultima regola
-            rules.append(current_rule)
-        return rules
         
 
     @classmethod
-    def listrules(cls, options: list = []):
+    def listrules(cls, options: list = [], xwall_rules_only: bool = False):
         """
         Elenca tutte le regole del firewall di Windows e le restituisce come una lista di dizionari.
         Ogni dizionario rappresenta una regola del firewall.
         """
+
         try:
             # Esegue il comando netsh per ottenere tutte le regole del firewall
             NETSH_CMD = cls.NETSH_LISTRULE_CMD + [*options, "verbose"]
@@ -125,10 +125,6 @@ class Firewall:
             return rules
             
 
-
-
-
-    
 
 if __name__ == "__main__":
     # Verifica i privilegi di amministratore prima di procedere.
