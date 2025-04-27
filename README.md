@@ -1,3 +1,3 @@
 # xwall
 Tools for supervising and system guarding
-![](img\xwall_logo.png)
+![](./img/xwall_logo.png)
