@@ -1,4 +1,4 @@
-# AutoPyrewall 2025
+# XWALL 2025
 
 import subprocess
 import sys
@@ -32,7 +32,7 @@ class Firewall:
         try:
             # Verifica che il percorso della cartella esista
             if not path.is_dir():
-                print(f"Errore: La cartella specificata '{folder_path}' non esiste.")
+                print(f"Errore: La cartella specificata '{path}' non esiste.")
                 sys.exit(1)
                 
             exe_filelist = [file for file in path.iterdir() if file.suffix == ".exe"]

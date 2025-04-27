@@ -1,4 +1,4 @@
-# AutoPyrewall 2025
+# XWALL 2025
 
 import subprocess
 import sys
