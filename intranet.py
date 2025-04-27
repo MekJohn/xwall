@@ -2,37 +2,65 @@
 
 import subprocess
 import sys
+import ctypes
 import pathlib as pt
 import time as tm
 
-import utility
+import listener
 
+def is_admin():
+    """
+    Verifica se lo script è in esecuzione con privilegi di amministratore.
+    Restituisce True se l'utente è un amministratore, False altrimenti.
+    """
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+def run_as_admin(executable: str = None, argv: list = None):
+    """
+    Riavvia lo script con privilegi di amministratore.
+    """
+    # TODO i percorsi devono essere assoluti altrimenti non trova nulla
+    python_executable = sys.executable
+    script_path = pt.Path(sys.argv[0]).resolve()
+    script_arguments = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+                 
+    if not is_admin():
+        print("Richiesta di privilegi di amministratore...")
+        print(f"{python_executable}\n{script_path}\n{script_arguments}")
+        arguments_to_pass = f'"{script_path}" {script_arguments}'
+        returned = ctypes.windll.shell32.ShellExecuteW(None, "runas", python_executable, arguments_to_pass, None, 1)
         
+        print(returned)
+        success = True if int(returned) > 32 else False
+        if success:
+            print("Ran as admin correctly.")
+        else:
+            print("Failed to run as admin.")
+        sys.exit()
+
             
-class Firewall:
-    
-    def __init__(self):
-        pass
-    
-    
-    @staticmethod
-    def block_traffic(path: str, ingoing: bool = True, outgoing: bool = True):
+            
+            
+def block_exe_traffic(folder_path):
     """
     Blocca tutto il traffico di rete in entrata e in uscita per i file .exe
     all'interno della cartella specificata.  Crea regole del firewall di Windows.
-    
+
     Args:
         folder_path (str): Il percorso della cartella contenente i file .exe da bloccare.
     """
     
-    path = pt.Path(path)
+    folder_path = pt.Path(folder_path)
     try:
         # Verifica che il percorso della cartella esista
-        if not path.is_dir():
+        if not folder_path.is_dir():
             print(f"Errore: La cartella specificata '{folder_path}' non esiste.")
             sys.exit(1)
             
-        exe_filelist = [file for file in path.iterdir() if file.suffix == ".exe"]
+        exe_filelist = [file for file in folder_path.iterdir() if file.suffix == ".exe"]
         # Scorre tutti i file nella cartella
         for file in exe_filelist:
             
@@ -50,7 +78,7 @@ class Firewall:
                  *SETTINGS] ,
                 check=True
             )
-    
+
             # Blocca il traffico in uscita per il file .exe
             subprocess.run(
                 [*ADD_RULE_CMD, "dir=out", "action=block",
@@ -61,7 +89,7 @@ class Firewall:
                 check=True
             )
             print(f"Traffico bloccato per: {file}")
-    
+
     except subprocess.CalledProcessError as e:
         print(f"Errore durante la creazione delle regole del firewall: {e}")
         print("Assicurarsi di avere i privilegi di amministratore e che i comandi siano stati inseriti correttamente.")
@@ -72,7 +100,7 @@ class Firewall:
 
 
 
-def list_rules(options: list = []):
+def list_firewall_rules(options: list = []):
     """
     Elenca tutte le regole del firewall di Windows e le restituisce come una lista di dizionari.
     Ogni dizionario rappresenta una regola del firewall.
@@ -117,7 +145,7 @@ def list_rules(options: list = []):
 
 if __name__ == "__main__":
     # Verifica i privilegi di amministratore prima di procedere.
-    utility.run_as_admin()
+    run_as_admin()
 
     if len(sys.argv) > 1:
 
