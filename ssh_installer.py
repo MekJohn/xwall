@@ -1,6 +1,60 @@
 import subprocess
 import sys
 
+"""
+-----------	[WINDOWS] ----------
+!powershell
+[INSTALL]
+# Make sure that OpenSSH is available
+Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*'
+
+# Install the OpenSSH Client
+# Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+
+# Install the OpenSSH Server	
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+
+# Start the sshd service
+Start-Service sshd
+
+# OPTIONAL but recommended
+Set-Service -Name sshd -StartupType 'Automatic'
+
+[CONNECT]
+# Example: username@PCHOME or username@192.168.1.100
+ssh domain\username@servername
+
+[COPYFILES]
+# use absolute and / for paths
+scp -r <host@machine_name:from_remote> <to_local>				
+
+[UNINSTALL]
+# Uninstall the OpenSSH Client
+# Remove-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 	
+# Uninstall the OpenSSH Server
+Remove-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0		
+
+-----------	[LINUX] -----------
+!bash
+[INSTALL]
+sudo apt install openssh-server
+Y
+sudo systemctl enable ssh
+sudo ufw allow ssh
+sudo systemctl start ssh
+sudo systemctl status ssh
+
+[CONNECT]
+# Example: username@PCNAME or username@192.168.1.100
+ssh domain\username@servername
+
+[UNISTALL]
+# sudo systemctl stop ssh
+# sudo systemctl disable ssh
+# sudo apt-get remove opnessh-server
+# sudo ufw delete allow ssh
+"""
+
 def run_ssh_installer(choice=None):
     """
     Executes SSH installation/uninstallation tasks on Windows.
