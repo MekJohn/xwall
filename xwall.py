@@ -6,6 +6,9 @@ import pathlib as pt
 import time as tm
 
 import utility
+from enum import Enum
+import winreg
+from dataclasses import dataclass, field as Field
 
 
 
@@ -125,6 +128,130 @@ class Firewall:
             return rules
 
 
+class DType(Enum):
+
+    REG_SZ = winreg.REG_SZ
+    REG_DWORD = winreg.REG_DWORD
+    REG_BINARY = winreg.REG_BINARY
+    REG_EXPAND_SZ = winreg.REG_EXPAND_SZ
+
+class HKEY(Enum):
+
+    HKEY_USERS = winreg.HKEY_USERS
+    HKEY_CLASSES_ROOT = winreg.HKEY_CLASSES_ROOT
+    HKEY_CURRENT_USER = winreg.HKEY_CURRENT_USER
+    HKEY_LOCAL_MACHINE = winreg.HKEY_LOCAL_MACHINE
+    HKEY_CURRENT_CONFIG = winreg.HKEY_CURRENT_CONFIG
+
+@dataclass
+class FKEY:
+
+    name: str = None
+    root: str = Field(repr = False, default = None)
+    path: str = Field(repr = False, default = str)
+    mtime: int = Field(repr = False, default = None)
+
+    @property
+    def info(self):
+        with winreg.OpenKey(self.root.value, self.path) as k:
+            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
+            return n_keys, n_values, mtime
+
+    @property
+    def subf(self):
+        sub_fkeys = []
+        with winreg.OpenKey(self.root.value, self.path) as k:
+            n_keys, _, mtime = winreg.QueryInfoKey(k)
+            for s in range(n_keys):
+                name = winreg.EnumKey(k, s)
+                path = self.path + "\\" + name
+                fkey = FKEY(root = self.root, name = name, path = path)
+                sub_fkeys.append(fkey)
+        return sub_fkeys
+
+    @property
+    def sube(self):
+        sub_ekeys = []
+        with winreg.OpenKey(self.root.value, self.path) as k:
+            _, n_entry, mtime = winreg.QueryInfoKey(k)
+            for e in range(n_entry):
+                name, value, dtype = winreg.EnumValue(k, e)
+                path = self.path + "\\" + name
+                dtype = DType(dtype) if dtype in DType else dtype
+                ekey = EKEY(
+                    root = self.root, path = path,
+                    name = name, value = value, dtype = dtype,
+                    )
+                sub_ekeys.append(ekey)
+        return sub_ekeys
+
+    @property
+    def data(self):
+        with winreg.OpenKey(self.value, "") as k:
+            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
+            return n_keys, n_values, mtime
+
+@dataclass
+class EKEY:
+
+    name: str = None
+    dtype: str | int = Field(repr = False, default = None)
+    value: str | int = Field(repr = False, default = None)
+
+    root: str = Field(repr = False, default = None)
+    path: str = Field(repr = False, default = str)
+    mtime: int = Field(repr = False, default = None)
+
+
+class WinREG:
+
+    def __init__(self):
+        pass
+
+    @property
+    def HKEY(self):
+        return HKEY
+
+    def items(self):
+        items = {root.name: root.value for root in self.HKEY}
+        return items
+
+    def key_info(key: int):
+        with winreg.OpenKey(key.value, "") as k:
+            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
+            return n_keys, n_values, mtime
+
+
+    def listreg(self, key: HKEY):
+        with winreg.OpenKey(key.value, "") as k:
+            n_fkeys, n_ekeys, mtime = winreg.QueryInfoKey(k)
+            fkeys = []
+            ekeys = []
+
+            for f in range(n_fkeys):
+                name = winreg.EnumKey(k, f)
+                path = "\\" + name
+                fkey = FKEY(root = key, name = name, path = path, mtime = mtime)
+                fkeys.append(fkey)
+
+            for e in range(n_ekeys):
+                name, value, dtype = winreg.EnumValue(k, e)
+                path = self.path + "\\" + name
+                dtype = DType(dtype) if dtype in DType else dtype
+                ekey = EKEY(
+                    root = self.root, path = path,
+                    name = name, value = value, dtype = dtype,
+                    )
+                ekeys.append(ekey)
+
+            keys = [*fkeys, *ekeys]
+            return keys
+
+
+
+
+
+
 class Xreg:
 
     @classmethod
@@ -132,10 +259,7 @@ class Xreg:
         import winreg
         risultati = []
         # Definiamo le radici principali da scansionare
-        roots = {
-            "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER,
-            "HKEY_LOCAL_MACHINE": winreg.HKEY_LOCAL_MACHINE,
-        }
+        roots = HKEY.list()
 
         for nome_root, hkey in roots.items():
             print(f"Scansione di {nome_root} in corso...")
