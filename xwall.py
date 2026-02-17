@@ -166,7 +166,7 @@ class FKEY:
 
     @property
     def info(self):
-        rel_path = None if self.rel_path is None else self.rel_path.as_posix()
+        rel_path = None if self.rel_path is None else str(self.rel_path)
         with winreg.OpenKey(self.root.value, rel_path) as k:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
@@ -179,38 +179,34 @@ class FKEY:
     @property
     def subf(self):
         sub_fkeys = []
-        rel_path = None if self.rel_path is None else self.rel_path.as_posix()
+        rel_path = None if self.rel_path is None else str(self.rel_path)
         with winreg.OpenKey(self.root.value, rel_path) as k:
             n_keys, _, mtime = winreg.QueryInfoKey(k)
             for s in range(n_keys):
                 name = winreg.EnumKey(k, s)
-                fkey = FKEY(                    
-                    name = name,
-                    address = self.abs_path / name
-                    )
+                fkey = FKEY(name = name, address = self.abs_path / name)
                 sub_fkeys.append(fkey)
         return sub_fkeys
 
     @property
     def sube(self):
         sub_ekeys = []
-        rel_path = None if self.rel_path is None else self.rel_path.as_posix()
+        rel_path = None if self.rel_path is None else str(self.rel_path)
         with winreg.OpenKey(self.root.value, rel_path) as k:
             _, n_entry, mtime = winreg.QueryInfoKey(k)
             for e in range(n_entry):
                 name, value, dtype = winreg.EnumValue(k, e)
                 ekey = EKEY(                    
-                    address = self.abs_path / name,
-                    name = name,
-                    value = value,
+                    name = name, value = value,
                     dtype = DType(dtype) if dtype in DType else dtype,
+                    address = self.abs_path / name,
                     )
                 sub_ekeys.append(ekey)
         return sub_ekeys
     
     @property
     def all(self):
-        return self.subf.extend(self.sube)
+        return self.subf + self.sube
 
 
 @dataclass
@@ -220,27 +216,57 @@ class EKEY:
     dtype: str | int = Field(repr = False, default = None)
     value: str | int = Field(repr = False, default = None)
 
-    address: str = Field(repr = False, default = str)
-    mtime: int = Field(repr = False, default = None)
+    address: str = Field(repr = False, default = str)    
 
     @property
     def root(self):
-        return self.abs_path.parts[0]
+        name = self.address.parts[0]
+        root = getattr(HKEY, name)()
+        return root
 
     @property
     def abs_path(self):
-        return Path(self.address)
+        return self.address
 
     @property
     def rel_path(self):
-        path = self.abs_path.relative_to(self.root.name)
-        return path
+        path = self.address.relative_to(self.root.name)
+        return None if path == Path(".") or path is None else path
+    
+    @property
+    def info(self):
+        rel_path = None if self.rel_path is None else str(self.rel_path)
+        with winreg.OpenKey(self.root.value, rel_path) as k:
+            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
+            return n_keys, n_values, mtime
+    
+    @property
+    def mtime(self):
+        _, _, mtime = self.info
+        return mtime
 
 
 @dataclass
 class HKEY(FKEY):
 
     value: str | int = Field(repr = False, default = None)
+    
+    
+    def search(self, func):
+        found = []
+        keys = self.all
+        while not found:
+            for k in keys:
+                if func(k):
+                    found.append(k)
+                new_keys = k.all
+                if not new_keys:
+                    pass
+                else:
+                    keys.append(new_keys)
+                    print(len(keys))
+                    
+                        
 
 
     @classmethod
@@ -275,61 +301,11 @@ class HKEY(FKEY):
             cls.HKEY_CLASSES_ROOT(), cls.HKEY_CURRENT_CONFIG(), 
             cls.HKEY_LOCAL_MACHINE()
             ]
-
-
-
-# class Registry:
     
-
-#     def __init__(self):
-#         pass
-
-#     @property
-#     def hkeys(self):
-        
-#         roots = {
-#             "HKEY_USERS": winreg.HKEY_USERS
-#             "HKEY_CLASSES_ROOT" = winreg.HKEY_CLASSES_ROOT
-#             "HKEY_CURRENT_USER" = winreg.HKEY_CURRENT_USER
-#             "HKEY_LOCAL_MACHINE" = winreg.HKEY_LOCAL_MACHINE
-#             "HKEY_CURRENT_CONFIG" = winreg.HKEY_CURRENT_CONFIG
-#             }
-        
-#         return HKEY._member_map_
-
-#     def info(key: HKEY | FKEY | EKEY):
-#         with winreg.OpenKey(key.value, "") as k:
-#             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
-#             return n_keys, n_values, mtime
-
-
-#     def listreg(self, key: HKEY):
-#         with winreg.OpenKey(key.value, "") as k:
-#             n_fkeys, n_ekeys, mtime = winreg.QueryInfoKey(k)
-#             fkeys = []
-#             ekeys = []
-
-#             for f in range(n_fkeys):
-#                 name = winreg.EnumKey(k, f)
-#                 path = key.name / name
-#                 fkey = FKEY(root = key, name = name, path = path, mtime = mtime)
-#                 fkeys.append(fkey)
-
-#             for e in range(n_ekeys):
-#                 name, value, dtype = winreg.EnumValue(k, e)
-#                 path = key.name / name
-#                 dtype = DType(dtype) if dtype in DType else dtype
-#                 ekey = EKEY(
-#                     root = key.name, path = path,
-#                     name = name, value = value, dtype = dtype,
-#                     )
-#                 ekeys.append(ekey)
-
-#             keys = [*fkeys, *ekeys]
-#             return keys
 
 
 if __name__ == "__main__":
 
     # utility.run_as_admin()
     hh = HKEY.HKEY_CLASSES_ROOT()
+    allkeys = hh.all
