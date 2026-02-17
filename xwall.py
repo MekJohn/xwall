@@ -139,15 +139,16 @@ class DType(Enum):
 
 
 
-@dataclass
 class FKEY:
 
-    name: str = None
-    address: str = Field(repr = False, default = str)
-    # mtime: int = Field(repr = False, default = None)
-    
-    def __post_init__(self):
-        self.address = Path(self.address)
+    def __init__(self, name: str = None, address: str = None):
+
+        self.name: str = name
+        self.address: str = Path(address)
+
+    def __repr__(self):
+        name_str = self.name.encode(errors = "ignore").decode()
+        return f"<FKEY '{name_str}'>"
 
     @property
     def root(self):
@@ -170,7 +171,7 @@ class FKEY:
         with winreg.OpenKey(self.root.value, rel_path) as k:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
-    
+
     @property
     def mtime(self):
         _, _, mtime = self.info
@@ -184,7 +185,8 @@ class FKEY:
             n_keys, _, mtime = winreg.QueryInfoKey(k)
             for s in range(n_keys):
                 name = winreg.EnumKey(k, s)
-                fkey = FKEY(name = name, address = self.abs_path / name)
+                address = self._join(self.abs_path, name)
+                fkey = FKEY(name = name, address = address)
                 sub_fkeys.append(fkey)
         return sub_fkeys
 
@@ -196,27 +198,86 @@ class FKEY:
             _, n_entry, mtime = winreg.QueryInfoKey(k)
             for e in range(n_entry):
                 name, value, dtype = winreg.EnumValue(k, e)
-                ekey = EKEY(                    
+                dtype = DType(dtype) if dtype in DType else dtype,
+                address = self._join(self.abs_path, name)
+                ekey = EKEY(
                     name = name, value = value,
-                    dtype = DType(dtype) if dtype in DType else dtype,
-                    address = self.abs_path / name,
+                    dtype = dtype, address = address,
                     )
                 sub_ekeys.append(ekey)
         return sub_ekeys
-    
+
     @property
     def all(self):
         return self.subf + self.sube
 
+    def walk(self):
+        try:
+            for e in self.sube:
+                try:
+                    yield e
+                except OSError:
+                    continue
 
-@dataclass
+            for f in self.subf:
+                try:
+                    yield f
+                    yield from f.walk()
+                except OSError:
+                    continue
+
+        except (PermissionError, OSError):
+            return
+
+    def delete(self, show=True):
+        try:
+            items_to_delete = [self] + list(self.walk())
+            items_to_delete.reverse()
+
+            # not real
+            if show is True:
+                for item in items_to_delete:
+                    print(f"Will be delete:: {item.address}")
+                return None
+
+            # real
+            if show is False:
+                for item in items_to_delete:
+                    with winreg.OpenKey(
+                            item.root.value, str(item.parent.rel_path), 0,
+                            winreg.KEY_ALL_ACCESS) as k:
+                        if isinstance(item, EKEY):
+                            winreg.DeleteValue(k, item.name)
+                        else:
+                            winreg.DeleteKey(k, item.name)
+
+            print(f"Eliminazione completata: {self.address}")
+
+        except PermissionError:
+            print(f"ERRORE: Permessi insufficienti per eliminare {self.address}. Esegui come Admin.")
+        except Exception as e:
+            print(f"ERRORE durante l'eliminazione: {e}")
+
+
+    @staticmethod
+    def _join(base, tail):
+        return Path(f"{base}//{tail}")
+
+
+
 class EKEY:
 
-    name: str = None
-    dtype: str | int = Field(repr = False, default = None)
-    value: str | int = Field(repr = False, default = None)
+    def __init__(self, name: str = None, address: str = None,
+                 dtype: object | int = None, value: str = None):
 
-    address: str = Field(repr = False, default = str)    
+        self.name = name
+        self.address = Path(address)
+        self.dtype = dtype
+        self.value = value
+
+    def __repr__(self):
+        name_str = self.name.encode(errors = "ignore").decode()
+        return f"<EKEY '{name_str}'>"
 
     @property
     def root(self):
@@ -232,31 +293,40 @@ class EKEY:
     def rel_path(self):
         path = self.address.relative_to(self.root.name)
         return None if path == Path(".") or path is None else path
-    
+
     @property
     def info(self):
         rel_path = None if self.rel_path is None else str(self.rel_path)
         with winreg.OpenKey(self.root.value, rel_path) as k:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
-    
+
     @property
     def mtime(self):
         _, _, mtime = self.info
         return mtime
 
 
-@dataclass
+
 class HKEY(FKEY):
 
-    value: str | int = Field(repr = False, default = None)
-    
-    
+    def __init__(self, name: str = None, address: str = None,
+                 value: str = None):
+
+        super().__init__(name = name, address = address)
+        self.value = value
+
+    def __repr__(self):
+        name_str = self.name.encode(errors = "ignore").decode()
+        return f"<HKEY '{name_str}'>"
+
+
     def search(self, func):
         found = []
         keys = self.all
-        while not found:
+        while not found or not keys:
             for k in keys:
+                keys.append(k.all)
                 if func(k):
                     found.append(k)
                 new_keys = k.all
@@ -265,8 +335,6 @@ class HKEY(FKEY):
                 else:
                     keys.append(new_keys)
                     print(len(keys))
-                    
-                        
 
 
     @classmethod
@@ -293,15 +361,15 @@ class HKEY(FKEY):
     def HKEY_LOCAL_MACHINE(cls):
         name, value = "HKEY_LOCAL_MACHINE", winreg.HKEY_LOCAL_MACHINE
         return cls(name = name, address = name, value = value)
-    
+
     @classmethod
     def list(cls):
         return [
             cls.HKEY_USERS(), cls.HKEY_CURRENT_USER(),
-            cls.HKEY_CLASSES_ROOT(), cls.HKEY_CURRENT_CONFIG(), 
+            cls.HKEY_CLASSES_ROOT(), cls.HKEY_CURRENT_CONFIG(),
             cls.HKEY_LOCAL_MACHINE()
             ]
-    
+
 
 
 if __name__ == "__main__":
