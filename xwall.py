@@ -214,17 +214,11 @@ class FKEY:
     def walk(self):
         try:
             for e in self.sube:
-                try:
-                    yield e
-                except OSError:
-                    continue
+                yield e
 
             for f in self.subf:
-                try:
-                    yield f
-                    yield from f.walk()
-                except OSError:
-                    continue
+                yield f
+                yield from f.walk()
 
         except (PermissionError, OSError):
             return
@@ -234,21 +228,29 @@ class FKEY:
         items_to_delete.reverse()
         access = winreg.KEY_ALL_ACCESS
         
-        for item in items_to_delete:
+        ekeys = [e for e in items_to_delete if isinstance(e, EKEY)]
+        fkeys = [f for f in items_to_delete if isinstance(f, FKEY)]
+        
+        keys_to_delete = ekeys + fkeys
+        
+        for item in keys_to_delete:
             try:
-                with winreg.OpenKey(item.root.value, str(item.rel_path), 0, access) as k:
-                    if show is True:
-                        print(f"Deletable: {item.address}")
-                    else:
-                        if isinstance(item, EKEY):
-                            winreg.DeleteValue(k, item.name)
+                tt = str(type(item)).split(".")[1][:4]
+                confirmed = input(f"\n\nConfirm deleting {tt}: {item.address}\n>>")
+                if confirmed == "y":
+                    with winreg.OpenKey(item.root.value, str(item.rel_path), 0, access) as k:
+                        if show is True:
+                            print(f"Deletable: {item.address}")
                         else:
-                            winreg.DeleteKey(k, item.name)
-                        print(f"Deleted: {item.address}")
+                            if isinstance(item, EKEY):
+                                winreg.DeleteValue(k, item.name)
+                            else:
+                                winreg.DeleteKey(k, item.name)
+                            print(f"Deleted: {item.address}")
             except PermissionError:
-                print(f"ERRORE: Permessi insufficienti per eliminare {self.address}. Esegui come Admin.")
+                print(f"PermissionError: {item.address}.")
             except Exception as e:
-                print(f"ERRORE durante l'eliminazione: {e}")
+                print(f"GeneralError: {e}")
 
 
     @staticmethod
@@ -371,6 +373,5 @@ if __name__ == "__main__":
     allkeys = [h for h in hh.all if "acad" in h.name.lower()]
     for k in allkeys:
         k.delete(show=True)
-        input(">>")
         
         
