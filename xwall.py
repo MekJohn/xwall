@@ -232,6 +232,8 @@ class FKEY:
         except (PermissionError, OSError):
             return
 
+
+    @property
     def is_parent(self):
         fnum, enum, _ = self.info
         return True if fnum + enum > 0 else False
@@ -267,16 +269,16 @@ class FKEY:
         items_to_delete = [self] + list(self.walk())
         items_to_delete.reverse()
 
-        counter = 0
-        max_iters = len(items_to_delete) * 2
-        while items_to_delete and counter < max_iters:
+        while items_to_delete:
             for i, item in enumerate(items_to_delete):
                 deleted = item.delete(preview = preview)
                 if deleted:
                     items_to_delete.pop(i)
                     break
-            counter += 1
-        return items_to_delete
+                else:
+                    subitems = list(item.walk())
+                    items_to_delete.extend(subitems)
+        return False if items_to_delete else True
 
 
     @property
@@ -314,6 +316,15 @@ class EKEY:
         return root
 
     @property
+    def parent(self):
+        if self.address == self.root.address:
+            return self.root
+        else:
+            parent_addr = self.address.parent
+            parent_name = parent_addr.name
+        return self.__class__(name = parent_name, address = parent_addr)
+
+    @property
     def abs_path(self):
         return self.address
 
@@ -329,6 +340,7 @@ class EKEY:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
 
+    @property
     def is_parent(self):
         return False
 
@@ -337,19 +349,38 @@ class EKEY:
         _, _, mtime = self.info
         return mtime
 
+    @property
+    def exists(self):
+        try:
+            with winreg.OpenKey(self.root.value, str(self.rel_path)):
+                return True
+        except FileNotFoundError:
+            return False
 
-    def delete(self, show = True):
+
+
+    def delete(self, preview = True):
+        if self.is_parent:
+            return False
+
         root = self.root.value
-        parent = str(self.rel_path.parent)
+        parent = str(self.parent.address)
         full_access = winreg.KEY_ALL_ACCESS
-        with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
-            if show is True:
-                print(f"Deletable: {self.address}")
-                deleted = False
-            else:
-                winreg.DeleteValue(parent_key, self.name)
-                deleted = False
-        return deleted
+
+        try:
+            with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
+                if not preview:
+                    winreg.DeleteValue(parent_key, self.name)
+                print(f"Deleted: {self.name}")
+                return True
+        except FileNotFoundError:
+            return True
+        except PermissionError:
+            print(f"PermissionError: {self.address}.")
+            return False
+        except Exception as e:
+            print(f"GeneralError: {e}")
+            return False
 
 
 
@@ -415,8 +446,11 @@ class HKEY(FKEY):
 if __name__ == "__main__":
 
     # utility.run_as_admin()
-    hh = HKEY.HKEY_CLASSES_ROOT()
-    func = lambda x: "acad" in x.name
-    found = hh.search(func)
+
+    found = []
+    func = lambda x: "autocad" in x.name.lower()
+    key = HKEY.HKEY_CLASSES_ROOT()
+    found = key.search(func)
+    found[0].delete_tree()
 
 
