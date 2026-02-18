@@ -7,7 +7,7 @@ import time as tm
 
 from pathlib import Path
 
-
+from rich.progress import track
 from enum import Enum
 import winreg
 from dataclasses import dataclass, field as Field
@@ -157,6 +157,15 @@ class FKEY:
         return root
 
     @property
+    def parent(self):
+        if self.address == self.root.address:
+            return self.root
+        else:
+            parent_addr = self.address.parent
+            parent_name = parent_addr.name
+        return self.__class__(name = parent_name, address = parent_addr)
+
+    @property
     def abs_path(self):
         return self.address
 
@@ -223,68 +232,60 @@ class FKEY:
         except (PermissionError, OSError):
             return
 
+    def is_parent(self):
+        fnum, enum, _ = self.info
+        return True if fnum + enum > 0 else False
 
-    def delete(self, show = True):
+    def __enter__(path: str, mode: str = "r"):
+        pass
+
+
+    def delete(self, preview = True):
+        if self.is_parent:
+            return False
+
         root = self.root.value
-        rpath = str(f.rel_path)
-        access = winreg.KEY_ALL_ACCESS
-        with winreg.OpenKey(root, str(f.rel_path), 0, access) as k:
-            if show is True:
-                print(f"Deletable: {self.address}")
-                deleted = False
-            else:
-                winreg.DeleteKey(k, f.name)
-                deleted = True
-        return deleted
+        parent = str(self.parent.address)
+        full_access = winreg.KEY_ALL_ACCESS
 
+        try:
+            with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
+                if not preview:
+                    winreg.DeleteKey(parent_key, self.name)
+                print(f"Deleted: {self.name}")
+                return True
+        except FileNotFoundError:
+            return True
+        except PermissionError:
+            print(f"PermissionError: {self.address}.")
+            return False
+        except Exception as e:
+            print(f"GeneralError: {e}")
+            return False
 
-
-    def delete(self, show=True):
+    def delete_tree(self, preview = True):
         items_to_delete = [self] + list(self.walk())
         items_to_delete.reverse()
-        access = winreg.KEY_ALL_ACCESS
+
+        counter = 0
+        max_iters = len(items_to_delete) * 2
+        while items_to_delete and counter < max_iters:
+            for i, item in enumerate(items_to_delete):
+                deleted = item.delete(preview = preview)
+                if deleted:
+                    items_to_delete.pop(i)
+                    break
+            counter += 1
+        return items_to_delete
 
 
-        ekeys = [e for e in items_to_delete if isinstance(e, EKEY)]
-        fkeys = [f for f in items_to_delete if isinstance(f, FKEY)]
-
-        while items_to_delete:
-        for f in fkeys:
-            if not f.subf and not f.sube:
-                with winreg.OpenKey(
-                        f.root.value, str(f.rel_path), 0, access
-                        ) as k:
-                    if show is True:
-                        print(f"Deletable: {f.address}")
-                    else:
-                        if isinstance(f, EKEY):
-                            winreg.DeleteValue(k, f.name)
-                        else:
-                            winreg.DeleteKey(k, f.name)
-                        print(f"Deleted: {f.address}")
-
-
-        keys_to_delete = ekeys + fkeys
-
-        for item in keys_to_delete:
-            try:
-                tt = str(type(item)).split(".")[1][:4]
-                confirmed = input(f"\n\nConfirm deleting {tt}: {item.address}\n>>")
-                if confirmed == "y":
-                    with winreg.OpenKey(item.root.value, str(item.rel_path), 0, access) as k:
-                        if show is True:
-                            print(f"Deletable: {item.address}")
-                        else:
-                            if isinstance(item, EKEY):
-                                winreg.DeleteValue(k, item.name)
-                            else:
-                                winreg.DeleteKey(k, item.name)
-                            print(f"Deleted: {item.address}")
-            except PermissionError:
-                print(f"PermissionError: {item.address}.")
-            except Exception as e:
-                print(f"GeneralError: {e}")
-
+    @property
+    def exists(self):
+        try:
+            with winreg.OpenKey(self.root.value, str(self.rel_path)):
+                return True
+        except FileNotFoundError:
+            return False
 
     @staticmethod
     def _join(base, tail):
@@ -328,6 +329,9 @@ class EKEY:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
 
+    def is_parent(self):
+        return False
+
     @property
     def mtime(self):
         _, _, mtime = self.info
@@ -336,14 +340,14 @@ class EKEY:
 
     def delete(self, show = True):
         root = self.root.value
-        rpath = str(f.rel_path)
-        access = winreg.KEY_ALL_ACCESS
-        with winreg.OpenKey(root, str(f.rel_path), 0, access) as k:
+        parent = str(self.rel_path.parent)
+        full_access = winreg.KEY_ALL_ACCESS
+        with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
             if show is True:
                 print(f"Deletable: {self.address}")
                 deleted = False
             else:
-                winreg.DeleteValue(k, f.name)
+                winreg.DeleteValue(parent_key, self.name)
                 deleted = False
         return deleted
 
@@ -362,20 +366,15 @@ class HKEY(FKEY):
         return f"<HKEY '{name_str}'>"
 
 
-    def search(self, func):
+    def search(self, func: object):
         found = []
         keys = self.all
-        while not found or not keys:
-            for k in keys:
-                keys.append(k.all)
-                if func(k):
-                    found.append(k)
-                new_keys = k.all
-                if not new_keys:
-                    pass
-                else:
-                    keys.append(new_keys)
-                    print(len(keys))
+        options = {"description": "Searching:", "transient": True}
+        for k in track(keys, total = len(keys), **options):
+            if func(k): found.append(k)
+            sub_found = [sb for sb in k.walk() if func(sb)]
+            found.extend(sub_found)
+        return found
 
 
     @classmethod
@@ -417,6 +416,7 @@ if __name__ == "__main__":
 
     # utility.run_as_admin()
     hh = HKEY.HKEY_CLASSES_ROOT()
-    allkeys = [h for h in hh.all if "acad" in h.name.lower()]
+    func = lambda x: "acad" in x.name
+    found = hh.search(func)
 
 
