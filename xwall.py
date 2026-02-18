@@ -223,16 +223,49 @@ class FKEY:
         except (PermissionError, OSError):
             return
 
+
+    def delete(self, show = True):
+        root = self.root.value
+        rpath = str(f.rel_path)
+        access = winreg.KEY_ALL_ACCESS
+        with winreg.OpenKey(root, str(f.rel_path), 0, access) as k:
+            if show is True:
+                print(f"Deletable: {self.address}")
+                deleted = False
+            else:
+                winreg.DeleteKey(k, f.name)
+                deleted = True
+        return deleted
+
+
+
     def delete(self, show=True):
         items_to_delete = [self] + list(self.walk())
         items_to_delete.reverse()
         access = winreg.KEY_ALL_ACCESS
-        
+
+
         ekeys = [e for e in items_to_delete if isinstance(e, EKEY)]
         fkeys = [f for f in items_to_delete if isinstance(f, FKEY)]
-        
+
+        while items_to_delete:
+        for f in fkeys:
+            if not f.subf and not f.sube:
+                with winreg.OpenKey(
+                        f.root.value, str(f.rel_path), 0, access
+                        ) as k:
+                    if show is True:
+                        print(f"Deletable: {f.address}")
+                    else:
+                        if isinstance(f, EKEY):
+                            winreg.DeleteValue(k, f.name)
+                        else:
+                            winreg.DeleteKey(k, f.name)
+                        print(f"Deleted: {f.address}")
+
+
         keys_to_delete = ekeys + fkeys
-        
+
         for item in keys_to_delete:
             try:
                 tt = str(type(item)).split(".")[1][:4]
@@ -299,6 +332,20 @@ class EKEY:
     def mtime(self):
         _, _, mtime = self.info
         return mtime
+
+
+    def delete(self, show = True):
+        root = self.root.value
+        rpath = str(f.rel_path)
+        access = winreg.KEY_ALL_ACCESS
+        with winreg.OpenKey(root, str(f.rel_path), 0, access) as k:
+            if show is True:
+                print(f"Deletable: {self.address}")
+                deleted = False
+            else:
+                winreg.DeleteValue(k, f.name)
+                deleted = False
+        return deleted
 
 
 
@@ -371,7 +418,5 @@ if __name__ == "__main__":
     # utility.run_as_admin()
     hh = HKEY.HKEY_CLASSES_ROOT()
     allkeys = [h for h in hh.all if "acad" in h.name.lower()]
-    for k in allkeys:
-        k.delete(show=True)
-        
-        
+
+
