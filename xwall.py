@@ -230,33 +230,25 @@ class FKEY:
             return
 
     def delete(self, show=True):
-        try:
-            items_to_delete = [self] + list(self.walk())
-            items_to_delete.reverse()
-
-            # not real
-            if show is True:
-                for item in items_to_delete:
-                    print(f"Will be delete:: {item.address}")
-                return None
-
-            # real
-            if show is False:
-                for item in items_to_delete:
-                    with winreg.OpenKey(
-                            item.root.value, str(item.parent.rel_path), 0,
-                            winreg.KEY_ALL_ACCESS) as k:
+        items_to_delete = [self] + list(self.walk())
+        items_to_delete.reverse()
+        access = winreg.KEY_ALL_ACCESS
+        
+        for item in items_to_delete:
+            try:
+                with winreg.OpenKey(item.root.value, str(item.rel_path), 0, access) as k:
+                    if show is True:
+                        print(f"Deletable: {item.address}")
+                    else:
                         if isinstance(item, EKEY):
                             winreg.DeleteValue(k, item.name)
                         else:
                             winreg.DeleteKey(k, item.name)
-
-            print(f"Eliminazione completata: {self.address}")
-
-        except PermissionError:
-            print(f"ERRORE: Permessi insufficienti per eliminare {self.address}. Esegui come Admin.")
-        except Exception as e:
-            print(f"ERRORE durante l'eliminazione: {e}")
+                        print(f"Deleted: {item.address}")
+            except PermissionError:
+                print(f"ERRORE: Permessi insufficienti per eliminare {self.address}. Esegui come Admin.")
+            except Exception as e:
+                print(f"ERRORE durante l'eliminazione: {e}")
 
 
     @staticmethod
@@ -376,4 +368,9 @@ if __name__ == "__main__":
 
     # utility.run_as_admin()
     hh = HKEY.HKEY_CLASSES_ROOT()
-    allkeys = hh.all
+    allkeys = [h for h in hh.all if "acad" in h.name.lower()]
+    for k in allkeys:
+        k.delete(show=True)
+        input(">>")
+        
+        
