@@ -449,8 +449,8 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    key = HKEY.HKEY_CLASSES_ROOT()
+    key = HKEY.HKEY_CURRENT_USER()
     found = key.search(func)
-    found[0].delete_tree()
+    # found[0].delete_tree()
 
 
