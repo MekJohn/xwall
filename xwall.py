@@ -220,7 +220,7 @@ class FKEY:
     def all(self):
         return self.subf + self.sube
 
-    def walk(self):
+    def walk(self, mode = "all"):
         try:
             for e in self.sube:
                 yield e
@@ -398,14 +398,9 @@ class HKEY(FKEY):
 
 
     def search(self, func: object):
-        found = []
-        keys = self.all
-        options = {"description": "Searching:", "transient": True}
-        for k in track(keys, total = len(keys), **options):
-            if func(k): found.append(k)
-            sub_found = [sb for sb in k.walk() if func(sb)]
-            found.extend(sub_found)
-        return found
+        for k in self.walk():
+            if func(k): 
+                yield k
 
 
     @classmethod
@@ -432,6 +427,14 @@ class HKEY(FKEY):
     def HKEY_LOCAL_MACHINE(cls):
         name, value = "HKEY_LOCAL_MACHINE", winreg.HKEY_LOCAL_MACHINE
         return cls(name = name, address = name, value = value)
+    
+    @classmethod
+    def walk(cls, *hkeys: object):
+        hkeys = cls.list() if not hkeys else hkeys
+        for h in hkeys:
+            for k in h.all:
+                for s in k.walk():
+                    yield s
 
     @classmethod
     def list(cls):
@@ -449,8 +452,7 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    key = HKEY.HKEY_CURRENT_USER()
-    found = key.search(func)
+    hh = HKEY.HKEY_CURRENT_CONFIG()
     # found[0].delete_tree()
 
 
