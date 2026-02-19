@@ -140,53 +140,63 @@ class DType(Enum):
 
 class Address:
 
-    def __init__(self, root: "HKEY", path: str = None):
-        path = "." if path is None else path
-        self.core = Path(path)
-        self.root = root
+    def __init__(self, path: str = None):
+        self.core = self._to_path(path)
+
+        if not self.core.parts[0].startswith("HKEY_"):
+            raise ValueError(f"Invalid HKEY: {self.root}")
+
+    @property
+    def root(self):
+        return self.parts[0]
 
     def __repr__(self):
         name_str = self.core.name.encode(errors = "ignore").decode()
         if not name_str or name_str == ".":
             name_str = self.root.name
-
         return f"<Address '{name_str}'>"
 
-    def __divmod__(self, part):
-        base = self.core.as_posix()
-        if isinstance(part, self.__class__):
-            tail = part.core.as_posix()
-        elif isinstance(part, Path):
-            tail = part.as_posix()
-        elif isinstance(part, str):
-            tail = Path(part)
-        elif part is None:
-            tail = Path()
+    @classmethod
+    def _to_path(cls, path):
+        if isinstance(path, cls):
+            path = path.core.as_posix()
+        elif isinstance(path, Path):
+            path = path.as_posix()
+        elif isinstance(path, str):
+            path = Path(path)
+        elif path is None:
+            path = Path()
         else:
-            tail = Path(str(part))
+            path = Path(str(path))
+        return path
+
+
+    def __truediv__(self, part):
+        base = self.core
+        tail = self._to_path(part)
 
         if tail.drive:
-            base = self.core.base.as_posix()
-            tail = part.as_posix()
-            new_address = f"{base}//{tail}"
+            new_address = f"{base.as_posix()}/{tail.as_posix()}"
         else:
-            new_address = self.core // tail
+            new_address = self.core / tail
         return self.__class__(new_address)
 
+    @property
+    def relative(self):
+        path = self.core.relative_to(self.root)
+        return None if path == Path(".") or path is None else path
 
-    def _join(self, tail):
-        if tail.drive:
-            return self.__class__(f"{self.base.as_posix}//{tail.as_posix}")
-        else:
-            return self.__class__(self // tail)
+    @property
+    def absolute(self):
+        return self.core
 
 
 class FKEY:
 
-    def __init__(self, name: str = None, address: str = None):
+    def __init__(self, name: str, address: str):
 
         self.name: str = name
-        self.address: str = Path(address)
+        self.address: str = Address(address)
 
     def __repr__(self):
         name_str = self.name.encode(errors = "ignore").decode()
@@ -194,9 +204,9 @@ class FKEY:
 
     @property
     def root(self):
-        name = self.address.parts[0]
-        root = getattr(HKEY, name)()
-        return root
+        name = self.address.root
+        root_key = getattr(HKEY, name)()
+        return root_key
 
     @property
     def parent(self):
@@ -207,14 +217,14 @@ class FKEY:
             parent_name = parent_addr.name
         return self.__class__(name = parent_name, address = parent_addr)
 
-    @property
-    def abs_path(self):
-        return self.address
+    # @property
+    # def abs_path(self):
+    #     return self.address
 
-    @property
-    def rel_path(self):
-        path = self.address.relative_to(self.root.name)
-        return None if path == Path(".") or path is None else path
+    # @property
+    # def rel_path(self):
+    #     path = self.address.relative_to(self.root.name)
+    #     return None if path == Path(".") or path is None else path
 
     @property
     def info(self):
@@ -259,7 +269,7 @@ class FKEY:
         return sub_ekeys
 
     @property
-    def all(self):
+    def suba(self):
         return self.subf + self.sube
 
     def walk(self, mode = "all"):
