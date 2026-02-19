@@ -138,6 +138,48 @@ class DType(Enum):
     REG_EXPAND_SZ = winreg.REG_EXPAND_SZ
 
 
+class Address:
+
+    def __init__(self, root: "HKEY", path: str = None):
+        path = "." if path is None else path
+        self.core = Path(path)
+        self.root = root
+
+    def __repr__(self):
+        name_str = self.core.name.encode(errors = "ignore").decode()
+        if not name_str or name_str == ".":
+            name_str = self.root.name
+
+        return f"<Address '{name_str}'>"
+
+    def __divmod__(self, part):
+        base = self.core.as_posix()
+        if isinstance(part, self.__class__):
+            tail = part.core.as_posix()
+        elif isinstance(part, Path):
+            tail = part.as_posix()
+        elif isinstance(part, str):
+            tail = Path(part)
+        elif part is None:
+            tail = Path()
+        else:
+            tail = Path(str(part))
+
+        if tail.drive:
+            base = self.core.base.as_posix()
+            tail = part.as_posix()
+            new_address = f"{base}//{tail}"
+        else:
+            new_address = self.core // tail
+        return self.__class__(new_address)
+
+
+    def _join(self, tail):
+        if tail.drive:
+            return self.__class__(f"{self.base.as_posix}//{tail.as_posix}")
+        else:
+            return self.__class__(self // tail)
+
 
 class FKEY:
 
@@ -289,10 +331,6 @@ class FKEY:
         except FileNotFoundError:
             return False
 
-    @staticmethod
-    def _join(base, tail):
-        return Path(f"{base}//{tail}")
-
 
 
 class EKEY:
@@ -399,7 +437,7 @@ class HKEY(FKEY):
 
     def search(self, func: object):
         for k in self.walk():
-            if func(k): 
+            if func(k):
                 yield k
 
 
@@ -427,7 +465,7 @@ class HKEY(FKEY):
     def HKEY_LOCAL_MACHINE(cls):
         name, value = "HKEY_LOCAL_MACHINE", winreg.HKEY_LOCAL_MACHINE
         return cls(name = name, address = name, value = value)
-    
+
     @classmethod
     def walk(cls, *hkeys: object):
         hkeys = cls.list() if not hkeys else hkeys
