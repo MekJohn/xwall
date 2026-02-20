@@ -148,7 +148,7 @@ class Address:
 
     @property
     def root(self):
-        return self.parts[0]
+        return self.core.parts[0]
 
     def __repr__(self):
         name_str = self.core.name.encode(errors = "ignore").decode()
@@ -159,9 +159,7 @@ class Address:
     @classmethod
     def _to_path(cls, path):
         if isinstance(path, cls):
-            path = path.core.as_posix()
-        elif isinstance(path, Path):
-            path = path.as_posix()
+            path = path.core
         elif isinstance(path, str):
             path = Path(path)
         elif path is None:
@@ -177,9 +175,18 @@ class Address:
 
         if tail.drive:
             new_address = f"{base.as_posix()}/{tail.as_posix()}"
+            new_address = Path(new_address)
         else:
             new_address = self.core / tail
         return self.__class__(new_address)
+
+    @property
+    def parent(self):
+        # TODO
+        parent = self.absolute.parent
+        if parent == Path():
+            parent = self.root
+        return self.__class__(name = parent.basename, address = parent)
 
     @property
     def relative(self):
@@ -188,7 +195,7 @@ class Address:
 
     @property
     def absolute(self):
-        return self.core
+        return self.root / self.relative
 
 
 class FKEY:
@@ -197,6 +204,10 @@ class FKEY:
 
         self.name: str = name
         self.address: str = Address(address)
+
+    def __truediv__(self, other):
+        address = self.address / other
+        return self.__class__(name = address.core.name, address=address)
 
     def __repr__(self):
         name_str = self.name.encode(errors = "ignore").decode()
