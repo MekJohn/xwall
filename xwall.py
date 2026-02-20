@@ -142,28 +142,38 @@ class Address:
 
     def __init__(self, path: str | Path):
         self.core = self._to_path(path)
-        self._check_root()
+
+        if not self.core.parts:
+            raise ValueError(f"Invalid Address: {str(self.core)}")
+
+    def __repr__(self):
+        return f"<Address '{self.name}'>"
+
 
     @property
     def root(self):
         root_str = self.core.parts[0]
-        return self.__class__(root_str)
-    
+        hkeys = [h.name for h in HKEY.list()]
+        return self.__class__(root_str) if root_str in hkeys else None
 
-    def _check_root(self):
-        if not self.core.parts: 
-            raise ValueError(f"Invalid Address: {str(self.core)}")
-        elif not self.core.parts[0].startswith("HKEY_"):
-            raise ValueError(f"Invalid HKEY: {self.root}")
-    
+    @property
+    def is_root(self):
+        return True if self.root else False
+
+    @property
+    def is_absolute(self):
+        return True if self.root else False
+
+    @property
+    def is_relative(self):
+        return not self.is_absolute
+
+
     @property
     def name(self):
         name = self.core.name.encode(errors = "ignore").decode()
         name = "" if not name or name == "."else name
         return name
-
-    def __repr__(self):
-        return f"<Address '{self.name}'>"
 
     @classmethod
     def _to_path(cls, path):
@@ -177,7 +187,6 @@ class Address:
             path = Path(str(path))
         return path
 
-
     def __truediv__(self, part):
         base = self.core
         tail = self._to_path(part)
@@ -188,25 +197,26 @@ class Address:
         else:
             new_address = self.core / tail
         return self.__class__(new_address)
-    
+
     @property
-    def relative(self):  
-        # TODO
-        path_str = str(self.core).split(self.root.name)[1]
-        path = Path(path_str)
-        return None if path == Path(".") or path is None else self.__class__(path)
-    
+    def relative(self):
+        path_str = str(self.core).split(self.root.name)[1].strip("/").strip("\\")
+        path = None if path_str in ["", "."] else Path(path_str)
+        return self.__class__(path) if path else None
+
     @property
-    def is_root(self):
-        hkeys = [h.name for h in HKEY.list()]
-        return True if len(self.core.parts) and self.name in hkeys else False
+    def str(self):
+        return str(self.core)
+
+    @property
+    def absolute(self):
+        return self.__class__(self.core) if self.is_absolute else None
 
     @property
     def parent(self):
-        # TODO
         parent = self.core.parent
         return None if parent == Path() else self.__class__(parent)
-        
+
 
 
 
@@ -217,31 +227,32 @@ class FKEY:
 
     def __init__(self, name: str, address: str):
 
-        self.name: str = name
+        # self.name: str = name
         self.address: str = Address(address)
 
+    @property
+    def name(self):
+        return self.address.name
+
     def __truediv__(self, other):
-        address = self.address / other
-        return self.__class__(name = address.core.name, address=address)
+        address = self.address / other.address
+        return self.__class__(name = address.name, address=address)
 
     def __repr__(self):
-        name_str = self.name.encode(errors = "ignore").decode()
-        return f"<FKEY '{name_str}'>"
+        return f"<FKEY '{self.name}'>"
 
     @property
     def root(self):
-        name = self.address.root
-        root_key = getattr(HKEY, name)()
+        root_key = getattr(HKEY, self.name)()
         return root_key
 
     @property
+    def is_root(self):
+        return self.address.is_root
+
+    @property
     def parent(self):
-        if self.address == self.root.address:
-            return self.root
-        else:
-            parent_addr = self.address.parent
-            parent_name = parent_addr.name
-        return self.__class__(name = parent_name, address = parent_addr)
+        return None if self.is_root else self.__class__(self.address.parent)
 
     # @property
     # def abs_path(self):
@@ -528,7 +539,7 @@ if __name__ == "__main__":
     func = lambda x: "autocad" in x.name.lower()
     hh = HKEY.HKEY_CURRENT_CONFIG()
     # found[0].delete_tree()
-    
+
     aa = hh.address / "ciao" / "oiuhoipsjpois" / r"\\192.168.1.110\Server UTN\Commesse\2025\MKP - F25-0428 - NENCINI\Docs\MAIL - nuova richiesta cliente.pdf" / r"C:\Users\Ing. Gaudio\Downloads\RO250180.pdf" / "Iuhiuhih.png"
 
 
