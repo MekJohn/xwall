@@ -153,7 +153,7 @@ class Address:
     @property
     def root(self):
         root_str = self.core.parts[0]
-        hkeys = [h.name for h in HKEY.list()]
+        hkeys = [h for h in HKEY.main().keys()]
         return self.__class__(root_str) if root_str in hkeys else None
 
     @property
@@ -201,7 +201,7 @@ class Address:
     @property
     def relative(self):
         path_str = str(self.core).split(self.root.name)[1].strip("/").strip("\\")
-        path = None if path_str in ["", "."] else Path(path_str)
+        path = None if path_str in ["", "."] else path_str
         return self.__class__(path) if path else None
 
     @property
@@ -220,15 +220,13 @@ class Address:
 
 
 
+class ABC:
 
-
-
-class FKEY:
-
-    def __init__(self, name: str, address: str):
-
-        # self.name: str = name
-        self.address: str = Address(address)
+    def __init__(self, address: str):
+        if address.is_absolute:
+            self.address: str = Address(address)
+        else:
+            raise ValueError(f"Invalid absolute Address: {address}")
 
     @property
     def name(self):
@@ -239,34 +237,27 @@ class FKEY:
         return self.__class__(name = address.name, address=address)
 
     def __repr__(self):
-        return f"<FKEY '{self.name}'>"
+        return f"<ABC '{self.name}'>"
 
     @property
     def root(self):
-        root_key = getattr(HKEY, self.name)()
+        root_key = getattr(HKEY, self.address.root.name)()
         return root_key
-
-    @property
-    def is_root(self):
-        return self.address.is_root
 
     @property
     def parent(self):
         return None if self.is_root else self.__class__(self.address.parent)
 
-    # @property
-    # def abs_path(self):
-    #     return self.address
-
-    # @property
-    # def rel_path(self):
-    #     path = self.address.relative_to(self.root.name)
-    #     return None if path == Path(".") or path is None else path
+    @property
+    def relative(self):
+        relative = self.address.relative
+        return relative if relative else None
 
     @property
     def info(self):
-        rel_path = None if self.rel_path is None else str(self.rel_path)
-        with winreg.OpenKey(self.root.value, rel_path) as k:
+        relative = self.address.relative
+        sub_path = relative.str if relative else None
+        with winreg.OpenKey(self.root.value, sub_path) as k:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
 
@@ -276,34 +267,64 @@ class FKEY:
         return mtime
 
     @property
+    def is_parent(self):
+        fnum, enum, _ = self.info
+        return True if fnum + enum > 0 else False
+
+
+    @property
+    def exists(self):
+        try:
+            with winreg.OpenKey(self.root.value, str(self.rel_path)):
+                return True
+        except FileNotFoundError:
+            return False
+
+
+
+
+
+
+class FKEY(ABC):
+
+    def __init__(self, address: str):
+        super().__init__(address)
+
+    def __repr__(self):
+        return f"<FKEY '{self.name}'>"
+
+    @property
+    def is_root(self):
+        return self.address.is_root
+
+    @property
     def subf(self):
-        sub_fkeys = []
-        rel_path = None if self.rel_path is None else str(self.rel_path)
-        with winreg.OpenKey(self.root.value, rel_path) as k:
+        found = []
+        relative = self.address.relative
+        sub_path = relative.str if relative else None
+        with winreg.OpenKey(self.root.value, sub_path) as k:
             n_keys, _, mtime = winreg.QueryInfoKey(k)
             for s in range(n_keys):
                 name = winreg.EnumKey(k, s)
-                address = self._join(self.abs_path, name)
-                fkey = FKEY(name = name, address = address)
-                sub_fkeys.append(fkey)
-        return sub_fkeys
+                address = self.address.absolute / name
+                fkey = FKEY(address = address)
+                found.append(fkey)
+        return found
 
     @property
     def sube(self):
-        sub_ekeys = []
-        rel_path = None if self.rel_path is None else str(self.rel_path)
-        with winreg.OpenKey(self.root.value, rel_path) as k:
+        found = []
+        relative = self.address.relative
+        sub_path = relative.str if relative else None
+        with winreg.OpenKey(self.root.value, sub_path) as k:
             _, n_entry, mtime = winreg.QueryInfoKey(k)
             for e in range(n_entry):
                 name, value, dtype = winreg.EnumValue(k, e)
-                dtype = DType(dtype) if dtype in DType else dtype,
-                address = self._join(self.abs_path, name)
-                ekey = EKEY(
-                    name = name, value = value,
-                    dtype = dtype, address = address,
-                    )
-                sub_ekeys.append(ekey)
-        return sub_ekeys
+                dtype = DType(dtype) if dtype in DType else dtype
+                address = self.address.absolute / name
+                ekey = EKEY(address, dtype, value)
+                found.append(ekey)
+        return found
 
     @property
     def suba(self):
@@ -320,7 +341,6 @@ class FKEY:
 
         except (PermissionError, OSError):
             return
-
 
     @property
     def is_parent(self):
@@ -370,78 +390,22 @@ class FKEY:
         return False if items_to_delete else True
 
 
-    @property
-    def exists(self):
-        try:
-            with winreg.OpenKey(self.root.value, str(self.rel_path)):
-                return True
-        except FileNotFoundError:
-            return False
 
+class EKEY(ABC):
 
+    def __init__(self, address: str, dtype: object | int, value: str):
 
-class EKEY:
-
-    def __init__(self, name: str = None, address: str = None,
-                 dtype: object | int = None, value: str = None):
-
-        self.name = name
-        self.address = Path(address)
+        super().__init__(address)
         self.dtype = dtype
         self.value = value
 
     def __repr__(self):
-        name_str = self.name.encode(errors = "ignore").decode()
-        return f"<EKEY '{name_str}'>"
+        return f"<EKEY '{self.name}'>"
 
-    @property
-    def root(self):
-        name = self.address.parts[0]
-        root = getattr(HKEY, name)()
-        return root
-
-    @property
-    def parent(self):
-        if self.address == self.root.address:
-            return self.root
-        else:
-            parent_addr = self.address.parent
-            parent_name = parent_addr.name
-        return self.__class__(name = parent_name, address = parent_addr)
-
-    @property
-    def abs_path(self):
-        return self.address
-
-    @property
-    def rel_path(self):
-        path = self.address.relative_to(self.root.name)
-        return None if path == Path(".") or path is None else path
-
-    @property
-    def info(self):
-        rel_path = None if self.rel_path is None else str(self.rel_path)
-        with winreg.OpenKey(self.root.value, rel_path) as k:
-            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
-            return n_keys, n_values, mtime
 
     @property
     def is_parent(self):
         return False
-
-    @property
-    def mtime(self):
-        _, _, mtime = self.info
-        return mtime
-
-    @property
-    def exists(self):
-        try:
-            with winreg.OpenKey(self.root.value, str(self.rel_path)):
-                return True
-        except FileNotFoundError:
-            return False
-
 
 
     def delete(self, preview = True):
@@ -471,10 +435,9 @@ class EKEY:
 
 class HKEY(FKEY):
 
-    def __init__(self, name: str = None, address: str = None,
-                 value: str = None):
+    def __init__(self, address: str, value: str):
 
-        super().__init__(name = name, address = address)
+        super().__init__(address)
         self.value = value
 
     def __repr__(self):
@@ -490,44 +453,51 @@ class HKEY(FKEY):
 
     @classmethod
     def HKEY_USERS(cls):
-        name, value = "HKEY_USERS", winreg.HKEY_USERS
-        return cls(name = name, address = name, value = value)
+        address = Address("HKEY_USERS")
+        value = winreg.HKEY_USERS
+        return cls(address, value)
 
     @classmethod
     def HKEY_CLASSES_ROOT(cls):
-        name, value = "HKEY_CLASSES_ROOT", winreg.HKEY_CLASSES_ROOT
-        return cls(name = name, address = name, value = value)
+        address = Address("HKEY_CLASSES_ROOT")
+        value = winreg.HKEY_CLASSES_ROOT
+        return cls(address, value)
 
     @classmethod
     def HKEY_CURRENT_CONFIG(cls):
-        name, value = "HKEY_CURRENT_CONFIG", winreg.HKEY_CURRENT_CONFIG
-        return cls(name = name, address = name, value = value)
+        address = Address("HKEY_CURRENT_CONFIG")
+        value = winreg.HKEY_CURRENT_CONFIG
+        return cls(address, value)
 
     @classmethod
     def HKEY_CURRENT_USER(cls):
-        name, value = "HKEY_CURRENT_USER", winreg.HKEY_CURRENT_USER
-        return cls(name = name, address = name, value = value)
+        address = Address("HKEY_CURRENT_USER")
+        value = winreg.HKEY_CURRENT_USER
+        return cls(address, value)
 
     @classmethod
     def HKEY_LOCAL_MACHINE(cls):
-        name, value = "HKEY_LOCAL_MACHINE", winreg.HKEY_LOCAL_MACHINE
-        return cls(name = name, address = name, value = value)
+        address = Address("HKEY_LOCAL_MACHINE")
+        value = winreg.HKEY_LOCAL_MACHINE
+        return cls(address, value)
 
     @classmethod
     def walk(cls, *hkeys: object):
-        hkeys = cls.list() if not hkeys else hkeys
+        hkeys = cls.main() if not hkeys else hkeys
         for h in hkeys:
             for k in h.all:
                 for s in k.walk():
                     yield s
 
-    @classmethod
-    def list(cls):
-        return [
-            cls.HKEY_USERS(), cls.HKEY_CURRENT_USER(),
-            cls.HKEY_CLASSES_ROOT(), cls.HKEY_CURRENT_CONFIG(),
-            cls.HKEY_LOCAL_MACHINE()
-            ]
+    @staticmethod
+    def main():
+        return {
+            "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,
+            "HKEY_CURRENT_CONFIG": winreg.HKEY_CURRENT_CONFIG,
+            "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER,
+            "HKEY_LOCAL_MACHINE": winreg.HKEY_LOCAL_MACHINE,
+            "HKEY_USERS": winreg.HKEY_USERS
+            }
 
 
 
@@ -537,8 +507,9 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_CURRENT_CONFIG()
-    # found[0].delete_tree()
+    hh = HKEY.HKEY_CLASSES_ROOT()
+    for k in hh.subf:
+        print(k.info)
 
     aa = hh.address / "ciao" / "oiuhoipsjpois" / r"\\192.168.1.110\Server UTN\Commesse\2025\MKP - F25-0428 - NENCINI\Docs\MAIL - nuova richiesta cliente.pdf" / r"C:\Users\Ing. Gaudio\Downloads\RO250180.pdf" / "Iuhiuhih.png"
 
