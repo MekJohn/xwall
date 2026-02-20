@@ -1,7 +1,7 @@
 # XWALL 2025
 
 import subprocess
-import sys
+import sys, os
 import pathlib as pt
 import time as tm
 
@@ -140,21 +140,30 @@ class DType(Enum):
 
 class Address:
 
-    def __init__(self, path: str = None):
+    def __init__(self, path: str | Path):
         self.core = self._to_path(path)
-
-        if not self.core.parts[0].startswith("HKEY_"):
-            raise ValueError(f"Invalid HKEY: {self.root}")
+        self._check_root()
 
     @property
     def root(self):
-        return self.core.parts[0]
+        root_str = self.core.parts[0]
+        return self.__class__(root_str)
+    
+
+    def _check_root(self):
+        if not self.core.parts: 
+            raise ValueError(f"Invalid Address: {str(self.core)}")
+        elif not self.core.parts[0].startswith("HKEY_"):
+            raise ValueError(f"Invalid HKEY: {self.root}")
+    
+    @property
+    def name(self):
+        name = self.core.name.encode(errors = "ignore").decode()
+        name = "" if not name or name == "."else name
+        return name
 
     def __repr__(self):
-        name_str = self.core.name.encode(errors = "ignore").decode()
-        if not name_str or name_str == ".":
-            name_str = self.root.name
-        return f"<Address '{name_str}'>"
+        return f"<Address '{self.name}'>"
 
     @classmethod
     def _to_path(cls, path):
@@ -179,23 +188,29 @@ class Address:
         else:
             new_address = self.core / tail
         return self.__class__(new_address)
+    
+    @property
+    def relative(self):  
+        # TODO
+        path_str = str(self.core).split(self.root.name)[1]
+        path = Path(path_str)
+        return None if path == Path(".") or path is None else self.__class__(path)
+    
+    @property
+    def is_root(self):
+        hkeys = [h.name for h in HKEY.list()]
+        return True if len(self.core.parts) and self.name in hkeys else False
 
     @property
     def parent(self):
         # TODO
-        parent = self.absolute.parent
-        if parent == Path():
-            parent = self.root
-        return self.__class__(name = parent.basename, address = parent)
+        parent = self.core.parent
+        return None if parent == Path() else self.__class__(parent)
+        
 
-    @property
-    def relative(self):
-        path = self.core.relative_to(self.root)
-        return None if path == Path(".") or path is None else path
 
-    @property
-    def absolute(self):
-        return self.root / self.relative
+
+
 
 
 class FKEY:
@@ -513,5 +528,7 @@ if __name__ == "__main__":
     func = lambda x: "autocad" in x.name.lower()
     hh = HKEY.HKEY_CURRENT_CONFIG()
     # found[0].delete_tree()
+    
+    aa = hh.address / "ciao" / "oiuhoipsjpois" / r"\\192.168.1.110\Server UTN\Commesse\2025\MKP - F25-0428 - NENCINI\Docs\MAIL - nuova richiesta cliente.pdf" / r"C:\Users\Ing. Gaudio\Downloads\RO250180.pdf" / "Iuhiuhih.png"
 
 
