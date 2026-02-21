@@ -298,16 +298,22 @@ class ABC:
 
 
 
-
-
-
 class FKEY(ABC):
 
     def __init__(self, address: str):
         super().__init__(address)
+        self._handle = None
 
     def __repr__(self):
         return f"<FKEY '{self.name}'>"
+
+    def __enter__(self):
+        self._handle = winreg.OpenKey(*self.address.location)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._handle:
+            winreg.CloseKey(self._handle)
 
     @property
     def list(self):
