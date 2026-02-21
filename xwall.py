@@ -7,6 +7,7 @@ import time as tm
 
 from pathlib import Path
 
+from rich.progress import Progress
 from rich.progress import track
 from enum import Enum
 import winreg
@@ -141,7 +142,6 @@ class DType(Enum):
 class Address:
 
     def __init__(self, *parts: str):
-        print(parts)
         if not isinstance(parts, tuple):
             raise TypeError(f"Invalid argument: '{type(parts)}'.")
 
@@ -206,13 +206,13 @@ class Address:
 
     def __truediv__(self, part):
         if isinstance(part, str):
-            parts = self.core + (part)
+            parts = self.core + (part,)
         elif isinstance(part, self.__class__):
             parts = self.core + part.core
         elif isinstance(part, Path):
-            parts = self.core + (p for p in part.parts)
+            parts = self.core + tuple(p for p in part.parts)
         else:
-            parts = self.core + (str(part))
+            parts = self.core + (str(part),)
         return self.__class__(*parts)
 
     @property
@@ -240,8 +240,8 @@ class Address:
 
     @property
     def parent(self):
-        parent = self.path.parent
-        return None if parent == Path() else self.__class__(parent)
+        parent = self.core[:-1]
+        return self.__class__(*parent)
 
 
 
@@ -256,7 +256,7 @@ class ABC:
 
     def __truediv__(self, other):
         address = self.address / other.address
-        return self.__class__(name = address.name, address=address)
+        return self.__class__(address)
 
     def __repr__(self):
         return f"<ABC '{self.name}'>"
@@ -281,7 +281,10 @@ class ABC:
             return None
         else:
             parent = self.address.parent
-            return HKEY(parent) if parent.is_root else FKEY(parent)
+            if parent.is_root:
+                return getattr(HKEY, parent.name)()
+            else:
+                return FKEY(parent)
 
     @property
     def relative(self):
@@ -299,27 +302,31 @@ class ABC:
         _, _, mtime = self.info
         return mtime
 
-    @property
-    def is_parent(self):
-        fnum, enum, _ = self.info
-        return True if fnum + enum > 0 else False
+    # @property
+    # def is_parent(self):
+    #     fnum, _, _ = self.info
+    #     return True if fnum > 0 else False
 
 
     @property
     def exists(self):
         try:
-            with winreg.OpenKey(*self.address.location):
+            with winreg.OpenKey(
+                    *self.address.location, 0,
+                    winreg.KEY_READ | winreg.KEY_WOW64_32KEY
+                    ):
                 return True
         except FileNotFoundError:
             try:
-                with winreg.OpenKey(*self.address.parent.location) as k:
+                with winreg.OpenKey(
+                        *self.address.parent.location, 0,
+                        winreg.KEY_READ | winreg.KEY_WOW64_32KEY
+                        ) as k:
                     winreg.QueryValueEx(k, self.address.name)
                     return True
             except (FileNotFoundError, OSError, ValueError):
-                # Non esiste né come chiave né come valore
                 return False
         except OSError:
-            # Altri errori (es. permessi negati su una chiave esistente)
             return False
 
 
@@ -334,7 +341,10 @@ class FKEY(ABC):
 
     @property
     def list(self):
-        with winreg.OpenKey(*self.address.location) as k:
+        with winreg.OpenKey(
+                *self.address.location, 0,
+                winreg.KEY_READ | winreg.KEY_WOW64_32KEY) as k:
+
             numf, nume, _ = winreg.QueryInfoKey(k)
             fkeys = [winreg.EnumKey(k, i) for i in range(numf)]
             ekeys = [winreg.EnumValue(k, i) for i in range(nume)]
@@ -345,7 +355,7 @@ class FKEY(ABC):
     def subf(self):
         found = []
         for name in self.list[0]:
-            address = self.address.absolute / name
+            address = self.address / name
             fkey = FKEY(address)
             found.append(fkey)
         return found
@@ -363,35 +373,53 @@ class FKEY(ABC):
     def suba(self):
         return self.subf + self.sube
 
-    def walk(self, mode = "all"):
+    # def walk(self):
+    #     try:
+    #         for e in self.sube:
+    #             yield e
+
+    #         for f in self.subf:
+    #             yield f
+    #             yield from f.walk()
+
+    #     except (PermissionError, OSError):
+    #         return None
+
+
+    def walk(self, progress=None, task=None):
+        # Inizializziamo il task se è la prima chiamata (root)
+        if progress and task is None:
+            # Calcoliamo il totale solo se possibile, altrimenti usiamo una barra indefinita
+            total = len(self.sube) + len(self.subf)
+            task = progress.add_task("[green]Walking...", total=total)
+
         try:
             for e in self.sube:
                 yield e
+                if progress and task:
+                    progress.update(task, advance=1)
 
             for f in self.subf:
                 yield f
-                yield from f.walk()
+                if progress and task:
+                    progress.update(task, advance=1)
+
+                # Ricorsione: passiamo progress e task per mantenere la stessa barra
+                yield from f.walk(progress=progress, task=task)
 
         except (PermissionError, OSError):
-            return
+            return None
 
-    @property
-    def is_parent(self):
-        fnum, enum, _ = self.info
-        return True if fnum + enum > 0 else False
 
     def delete(self, preview = True):
-        if self.is_parent:
-            return False
-
-        root = self.root.value
-        parent = str(self.parent.address)
-        full_access = winreg.KEY_ALL_ACCESS
-
+        if self.subf:
+            for k in self.subf:
+                k.delete(preview = preview)
         try:
-            with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
+            with winreg.OpenKey(*self.parent.address.location, 0,
+                                winreg.KEY_ALL_ACCESS) as pkey:
                 if not preview:
-                    winreg.DeleteKey(parent_key, self.name)
+                    winreg.DeleteKey(pkey, self.name)
                 print(f"Deleted: {self.name}")
                 return True
         except FileNotFoundError:
@@ -545,17 +573,20 @@ if __name__ == "__main__":
     func = lambda x: "autocad" in x.name.lower()
     hh = HKEY.HKEY_CLASSES_ROOT()
 
-    path_ek1 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/doppio\spit"
-    path_ek2 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/D:\cartella\spit"
-    path_fk = r"HKEY_CLASSES_ROOT\*\folder\val/ore\C:/User\fold/er"
+    # path_ek1 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/doppio\spit"
+    # path_ek2 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/D:\cartella\spit"
+    # path_fk = r"HKEY_CLASSES_ROOT\*\folder\val/ore\C:/User\fold/er"
 
-    aa = Address("HKEY_CLASSES_ROOT", "folder", r"doppio\spit")
-    bb = Address("HKEY_CLASSES_ROOT", "folder1",
-                 "fol/der2","C:/User", r"D:\cartella\spit")
+    # aa = Address("HKEY_CLASSES_ROOT", "folder", r"doppio\spit")
+    # bb = Address("HKEY_CLASSES_ROOT", "folder1",
+    #              "fol/der2","C:/User", r"D:\cartella\spit")
 
-    not_exists = []
+    found = []
     for k in hh.walk():
-        if not k.exists:
-            not_exists.append(k)
+        if ("autocad" in k.name.lower()
+            or "autolisp" in k.name.lower()
+            or "autodesk" in k.name.lower()
+            ):
+            found.append(k)
 
 
