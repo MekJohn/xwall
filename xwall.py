@@ -547,34 +547,15 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_CURRENT_USER()
-
-    # path_ek1 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/doppio\spit"
-    # path_ek2 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/D:\cartella\spit"
-    # path_fk = r"HKEY_CLASSES_ROOT\*\folder\val/ore\C:/User\fold/er"
-
-    # aa = Address("HKEY_CLASSES_ROOT", "folder", r"doppio\spit")
-    # bb = Address("HKEY_CLASSES_ROOT", "folder1",
-    #              "fol/der2","C:/User", r"D:\cartella\spit")
+    hh = HKEY.HKEY_CLASSES_ROOT()
 
 
-    # pp = ('HKEY_CURRENT_USER', 'Software', 'Microsoft',
-    #       'Windows', 'CurrentVersion', 'Explorer', 'FileExts', ".")
-    # kk = FKEY(Address(*pp))
 
-    # ext = "\\".join(pp[1:])
-
-    # with winreg.OpenKey(*kk.address.location) as k:
-    #     print(winreg.EnumKey(k, 1))
-
-
-    found = []
+    terms = "autocad", "autolisp", "autodesk", "acad"
+    found = {t: [] for t in terms}
     for i, k in enumerate(hh.walk()):
-        print(k)
-        if ("autocad" in k.name.lower()
-            or "autolisp" in k.name.lower()
-            or "autodesk" in k.name.lower()
-            ):
-            found.append(k)
-
+        print(i, k)
+        for t in terms:
+            if t in k.name.lower():
+                found[t].append(k)
 
