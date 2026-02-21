@@ -373,39 +373,12 @@ class FKEY(ABC):
     def suba(self):
         return self.subf + self.sube
 
-    # def walk(self):
-    #     try:
-    #         for e in self.sube:
-    #             yield e
-
-    #         for f in self.subf:
-    #             yield f
-    #             yield from f.walk()
-
-    #     except (PermissionError, OSError):
-    #         return None
-
-
-    def walk(self, progress=None, task=None):
-        # Inizializziamo il task se è la prima chiamata (root)
-        if progress and task is None:
-            # Calcoliamo il totale solo se possibile, altrimenti usiamo una barra indefinita
-            total = len(self.sube) + len(self.subf)
-            task = progress.add_task("[green]Walking...", total=total)
-
+    def walk(self):
         try:
-            for e in self.sube:
-                yield e
-                if progress and task:
-                    progress.update(task, advance=1)
-
-            for f in self.subf:
-                yield f
-                if progress and task:
-                    progress.update(task, advance=1)
-
-                # Ricorsione: passiamo progress e task per mantenere la stessa barra
-                yield from f.walk(progress=progress, task=task)
+            for k in self.suba:
+                yield k
+                if isinstance(k, FKEY):
+                    yield from k.walk()
 
         except (PermissionError, OSError):
             return None
@@ -479,17 +452,11 @@ class EKEY(ABC):
 
 
     def delete(self, preview = True):
-        if self.is_parent:
-            return False
-
-        root = self.root.value
-        parent = str(self.parent.address)
-        full_access = winreg.KEY_ALL_ACCESS
-
         try:
-            with winreg.OpenKey(root, parent, 0, full_access) as parent_key:
+            with winreg.OpenKey(*self.parent.address.location, 0,
+                                winreg.KEY_ALL_ACCESS) as pkey:
                 if not preview:
-                    winreg.DeleteValue(parent_key, self.name)
+                    winreg.DeleteKey(pkey, self.name)
                 print(f"Deleted: {self.name}")
                 return True
         except FileNotFoundError:
@@ -571,7 +538,7 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_CLASSES_ROOT()
+    hh = HKEY.HKEY_CURRENT_USER()
 
     # path_ek1 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/doppio\spit"
     # path_ek2 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/D:\cartella\spit"
@@ -582,7 +549,8 @@ if __name__ == "__main__":
     #              "fol/der2","C:/User", r"D:\cartella\spit")
 
     found = []
-    for k in hh.walk():
+    for i, k in enumerate(hh.walk()):
+        print(f"{i:0>10}. {k.address.core}")
         if ("autocad" in k.name.lower()
             or "autolisp" in k.name.lower()
             or "autodesk" in k.name.lower()
