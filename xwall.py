@@ -127,7 +127,7 @@ class Firewall:
             sys.exit(1)
         finally:
             rules = rules if rules is not None else []
-            return rules
+            # return rules
 
 
 class DType(Enum):
@@ -140,26 +140,44 @@ class DType(Enum):
 
 class Address:
 
-    def __init__(self, path: str | Path, *parts: str):
-        self.core = self._to_path(path)
+    def __init__(self, *parts: str):
+        print(parts)
+        if not isinstance(parts, tuple):
+            raise TypeError(f"Invalid argument: '{type(parts)}'.")
 
-        if not self.core.parts:
-            raise ValueError(f"Invalid Address: {str(self.core)}")
+        self.core = tuple(str(p) for p in parts)
+
+        if not self.core:
+            raise ValueError(f"Invalid Address parts: {parts}")
 
     def __repr__(self):
-        name = self.core.name.encode(errors = "ignore").decode()
+        name = self.core[-1].encode(errors = "ignore").decode()
         return f"<Address '{name}'>"
 
-
     @property
-    def root(self):
-        root_str = self.core.parts[0]
-        hkeys = [h for h in HKEY.main().keys()]
-        return self.__class__(root_str) if root_str in hkeys else None
+    def path(self):
+        path_str = "\\".join(self.core)
+        return Path(path_str)
+
+    # @staticmethod
+    # def split(path: str):
+    #     parts = path.split("\\")
+    #     return parts
 
     @property
     def is_root(self):
-        return True if self.root and len(self.core.parts) == 0 else False
+        if len(self.core) > 1:
+            return False
+        else:
+            root = self.core[0]
+            hkeys = [h for h in HKEY.main().keys()]
+            return True if root in hkeys else False
+
+    @property
+    def root(self):
+        root = self.core[0]
+        hkeys = [h for h in HKEY.main().keys()]
+        return self.__class__(root) if root in hkeys else None
 
     @property
     def is_absolute(self):
@@ -171,7 +189,7 @@ class Address:
 
     @property
     def name(self):
-        return self.core.name
+        return self.core[-1]
 
     @classmethod
     def _to_path(cls, path):
@@ -185,32 +203,30 @@ class Address:
             path = Path(str(path))
         return path
 
-    def __truediv__(self, part):
-        # TODO unable to treat address like:
-        #   HKEY.HKEY_CLASSES_ROOT / 'IE.message/rfc822'
-        base = self.core
-        tail = self._to_path(part)
 
-        if tail.drive:
-            new_address = f"{base.as_posix()}/{tail.as_posix()}"
-            new_address = Path(new_address)
+    def __truediv__(self, part):
+        if isinstance(part, str):
+            parts = self.core + (part)
+        elif isinstance(part, self.__class__):
+            parts = self.core + part.core
+        elif isinstance(part, Path):
+            parts = self.core + (p for p in part.parts)
         else:
-            new_address = self.core / tail
-        return self.__class__(new_address)
+            parts = self.core + (str(part))
+        return self.__class__(*parts)
 
     @property
     def relative(self):
-        path_str = str(self.core).split(self.root.name)[1].strip("/").strip("\\")
-        path = None if path_str in ["", "."] else path_str
-        return self.__class__(path) if path else None
+        path = self.core[1:]
+        return self.__class__(*path) if path else None
 
     @property
     def str(self):
-        return str(self.core)
+        return str(self.path)
 
     @property
     def absolute(self):
-        return self.__class__(self.core) if self.is_absolute else None
+        return self.__class__(*self.core) if self.is_absolute else None
 
     @property
     def location(self):
@@ -224,7 +240,7 @@ class Address:
 
     @property
     def parent(self):
-        parent = self.core.parent
+        parent = self.path.parent
         return None if parent == Path() else self.__class__(parent)
 
 
@@ -232,15 +248,11 @@ class Address:
 
 class ABC:
 
-    def __init__(self, address: str):
-        if address.is_absolute:
-            self.address: str = Address(address)
-        else:
-            raise ValueError(f"Invalid absolute Address: {address}")
+    def __init__(self, address: Address):
 
-    @property
-    def name(self):
-        return self.address.name
+        self.address = address
+        if not self.address.is_absolute:
+            raise ValueError(f"Invalid absolute Address: {address}")
 
     def __truediv__(self, other):
         address = self.address / other.address
@@ -248,6 +260,11 @@ class ABC:
 
     def __repr__(self):
         return f"<ABC '{self.name}'>"
+
+
+    @property
+    def name(self):
+        return self.address.name
 
     @property
     def is_root(self):
@@ -294,6 +311,15 @@ class ABC:
             with winreg.OpenKey(*self.address.location):
                 return True
         except FileNotFoundError:
+            try:
+                with winreg.OpenKey(*self.address.parent.location) as k:
+                    winreg.QueryValueEx(k, self.address.name)
+                    return True
+            except (FileNotFoundError, OSError, ValueError):
+                # Non esiste né come chiave né come valore
+                return False
+        except OSError:
+            # Altri errori (es. permessi negati su una chiave esistente)
             return False
 
 
@@ -302,18 +328,9 @@ class FKEY(ABC):
 
     def __init__(self, address: str):
         super().__init__(address)
-        self._handle = None
 
     def __repr__(self):
         return f"<FKEY '{self.name}'>"
-
-    def __enter__(self):
-        self._handle = winreg.OpenKey(*self.address.location)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._handle:
-            winreg.CloseKey(self._handle)
 
     @property
     def list(self):
@@ -328,13 +345,9 @@ class FKEY(ABC):
     def subf(self):
         found = []
         for name in self.list[0]:
-            if "/" in name or "\\" in name:
-                # BUG
-                continue
-            else:
-                address = self.address.absolute / name
-                fkey = FKEY(address)
-                found.append(fkey)
+            address = self.address.absolute / name
+            fkey = FKEY(address)
+            found.append(fkey)
         return found
 
     @property
@@ -366,10 +379,6 @@ class FKEY(ABC):
     def is_parent(self):
         fnum, enum, _ = self.info
         return True if fnum + enum > 0 else False
-
-    def __enter__(path: str, mode: str = "r"):
-        pass
-
 
     def delete(self, preview = True):
         if self.is_parent:
@@ -474,7 +483,7 @@ class HKEY(FKEY):
         self.value = value
 
     def __repr__(self):
-        name_str = self.name.encode(errors = "ignore").decode()
+        name_str = self.address.name.encode(errors = "ignore").decode()
         return f"<HKEY '{name_str}'>"
 
 
@@ -498,34 +507,22 @@ class HKEY(FKEY):
     @classmethod
     def HKEY_CLASSES_ROOT(cls):
         address = Address("HKEY_CLASSES_ROOT")
-        value = winreg.HKEY_CLASSES_ROOT
-        return cls(address, value)
+        return cls(address, winreg.HKEY_CLASSES_ROOT)
 
     @classmethod
     def HKEY_CURRENT_CONFIG(cls):
         address = Address("HKEY_CURRENT_CONFIG")
-        value = winreg.HKEY_CURRENT_CONFIG
-        return cls(address, value)
+        return cls(address, winreg.HKEY_CURRENT_CONFIG)
 
     @classmethod
     def HKEY_CURRENT_USER(cls):
         address = Address("HKEY_CURRENT_USER")
-        value = winreg.HKEY_CURRENT_USER
-        return cls(address, value)
+        return cls(address, winreg.HKEY_CURRENT_USER)
 
     @classmethod
     def HKEY_LOCAL_MACHINE(cls):
         address = Address("HKEY_LOCAL_MACHINE")
-        value = winreg.HKEY_LOCAL_MACHINE
-        return cls(address, value)
-
-    # @classmethod
-    # def walk(cls, *hkeys: object):
-    #     hkeys = cls.main() if not hkeys else hkeys
-    #     for h in hkeys:
-    #         for k in h.suba:
-    #             for s in k.walk():
-    #                 yield s
+        return cls(address, winreg.HKEY_LOCAL_MACHINE)
 
     @staticmethod
     def main():
@@ -548,7 +545,17 @@ if __name__ == "__main__":
     func = lambda x: "autocad" in x.name.lower()
     hh = HKEY.HKEY_CLASSES_ROOT()
 
+    path_ek1 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/doppio\spit"
+    path_ek2 = r"HKEY_CLASSES_ROOT\*\folder1\fol/der2\C:/User\valor/D:\cartella\spit"
+    path_fk = r"HKEY_CLASSES_ROOT\*\folder\val/ore\C:/User\fold/er"
+
+    aa = Address("HKEY_CLASSES_ROOT", "folder", r"doppio\spit")
+    bb = Address("HKEY_CLASSES_ROOT", "folder1",
+                 "fol/der2","C:/User", r"D:\cartella\spit")
+
+    not_exists = []
     for k in hh.walk():
-        print(k.parent)
+        if not k.exists:
+            not_exists.append(k)
 
 
