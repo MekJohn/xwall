@@ -222,7 +222,7 @@ class Address:
 
     @property
     def str(self):
-        return str(self.path)
+        return "\\".join(self.core)
 
     @property
     def absolute(self):
@@ -343,12 +343,17 @@ class FKEY(ABC):
     def list(self):
         with winreg.OpenKey(
                 *self.address.location, 0,
-                winreg.KEY_READ | winreg.KEY_WOW64_32KEY) as k:
+                winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as k:
 
             numf, nume, _ = winreg.QueryInfoKey(k)
             fkeys = [winreg.EnumKey(k, i) for i in range(numf)]
             ekeys = [winreg.EnumValue(k, i) for i in range(nume)]
-            return fkeys, ekeys
+
+            if len(fkeys) == numf and len(ekeys) == nume:
+                return fkeys, ekeys
+            else:
+                path = self.address.core
+                raise PermissionError(f"Access not granted to: {path}")
 
 
     @property
@@ -364,7 +369,7 @@ class FKEY(ABC):
     def sube(self):
         found = []
         for name, value, type_ in self.list[1]:
-            address = self.address.absolute / name
+            address = self.address / name
             ekey = EKEY(address)
             found.append(ekey)
         return found
@@ -379,9 +384,10 @@ class FKEY(ABC):
                 yield k
                 if isinstance(k, FKEY):
                     yield from k.walk()
-
-        except (PermissionError, OSError):
-            return None
+        except PermissionError as err:
+            return print(f"Error: {err}")
+        except OSError as err:
+            return print(f"Error: {err}")
 
 
     def delete(self, preview = True):
@@ -548,9 +554,20 @@ if __name__ == "__main__":
     # bb = Address("HKEY_CLASSES_ROOT", "folder1",
     #              "fol/der2","C:/User", r"D:\cartella\spit")
 
+
+    # pp = ('HKEY_CURRENT_USER', 'Software', 'Microsoft',
+    #       'Windows', 'CurrentVersion', 'Explorer', 'FileExts', ".")
+    # kk = FKEY(Address(*pp))
+
+    # ext = "\\".join(pp[1:])
+
+    # with winreg.OpenKey(*kk.address.location) as k:
+    #     print(winreg.EnumKey(k, 1))
+
+
     found = []
     for i, k in enumerate(hh.walk()):
-        print(f"{i:0>10}. {k.address.core}")
+        print(f"{i:0>10}. {k}")
         if ("autocad" in k.name.lower()
             or "autolisp" in k.name.lower()
             or "autodesk" in k.name.lower()
