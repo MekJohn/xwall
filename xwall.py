@@ -259,7 +259,8 @@ class ABC:
         return self.__class__(address)
 
     def __repr__(self):
-        return f"<ABC '{self.name}'>"
+        name = self.address.name.encode(errors = "ignore").decode()
+        return f"<ABC '{name}'>"
 
 
     @property
@@ -336,8 +337,10 @@ class FKEY(ABC):
     def __init__(self, address: str):
         super().__init__(address)
 
+
     def __repr__(self):
-        return f"<FKEY '{self.name}'>"
+        name = self.address.name.encode(errors = "ignore").decode()
+        return f"<FKEY '{name}'>"
 
     @property
     def list(self):
@@ -433,9 +436,8 @@ class EKEY(ABC):
         super().__init__(address)
 
     def __repr__(self):
-        return f"<EKEY '{self.name}'>"
-
-
+        name = self.address.name.encode(errors = "ignore").decode()
+        return f"<EKEY '{name}'>"
 
     @property
     def info(self):
@@ -462,10 +464,11 @@ class EKEY(ABC):
             with winreg.OpenKey(*self.parent.address.location, 0,
                                 winreg.KEY_ALL_ACCESS) as pkey:
                 if not preview:
-                    winreg.DeleteKey(pkey, self.name)
+                    winreg.DeleteValue(pkey, self.name)
                 print(f"Deleted: {self.name}")
                 return True
         except FileNotFoundError:
+            print(f"Not Found: {self.name}")
             return True
         except PermissionError:
             print(f"PermissionError: {self.address}.")
@@ -484,8 +487,8 @@ class HKEY(FKEY):
         self.value = value
 
     def __repr__(self):
-        name_str = self.address.name.encode(errors = "ignore").decode()
-        return f"<HKEY '{name_str}'>"
+        name = self.address.name.encode(errors = "ignore").decode()
+        return f"<HKEY '{name}'>"
 
 
     def search(self, func: object):
@@ -567,7 +570,7 @@ if __name__ == "__main__":
 
     found = []
     for i, k in enumerate(hh.walk()):
-        print(f"{i:0>10}. {k}")
+        print(k)
         if ("autocad" in k.name.lower()
             or "autolisp" in k.name.lower()
             or "autodesk" in k.name.lower()
