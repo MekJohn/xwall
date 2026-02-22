@@ -291,11 +291,44 @@ class ABC:
         relative = self.address.relative
         return relative if relative else None
 
+    @staticmethod
+    def _info(key, access: object = None):
+        access = winreg.KEY_READ if access is None else access
+
+        if isinstance(key, EKEY):
+            hkey, sub_path = key.parent.address.location
+            with winreg.OpenKey(hkey, sub_path, 0, access) as k:
+                value, type_ = winreg.QueryValueEx(k, key.name)
+                return key.name, value, type_
+        else:
+            hkey, sub_path = key.address.location
+            with winreg.OpenKey(hkey, sub_path, 0, access) as k:
+                name = winreg.EnumKey(k)
+                return name
+
+
+
     @property
     def info(self):
-        with winreg.OpenKey(*self.address.location) as k:
-            n_keys, n_values, mtime = winreg.QueryInfoKey(k)
-            return n_keys, n_values, mtime
+        # TODO
+        try:
+            access = winreg.KEY_READ | winreg.KEY_WOW64_64KEY
+            return self._info(self, access = access)
+        except FileNotFoundError:
+            try:
+                access = winreg.KEY_READ | winreg.KEY_WOW64_32KEY
+                return self._info(self, access = access)
+            except FileNotFoundError:
+                try:
+                    access = winreg.KEY_ALL_ACCESS
+                    return self._info(self, access = access)
+                except FileNotFoundError:
+                    if self.exists:
+                        raise PermissionError(self.name)
+                    else:
+                        return None
+                except PermissionError:
+                    raise PermissionError(self)
 
 
     @property
@@ -451,39 +484,6 @@ class EKEY(ABC):
         return f"<EKEY '{name}'>"
 
 
-    @staticmethod
-    def _info(key, access: object = None):
-        access = winreg.KEY_READ if access is None else access
-        h, p = k.parent.address.location
-        with winreg.OpenKey(h, p, 0, access) as p:
-            value, type_ = winreg.QueryValueEx(p, k.name)
-            return k.name, value, type_
-
-
-    @property
-    def info(self):
-        # TODO
-        try:
-            access = winreg.KEY_READ | winreg.KEY_WOW64_64KEY
-            return self._info(self, access = access)
-        except FileNotFoundError:
-            try:
-                access = winreg.KEY_READ | winreg.KEY_WOW64_32KEY
-                return self._info(self, access = access)
-            except FileNotFoundError:
-                try:
-                    access = winreg.KEY_ALL_ACCESS
-                    return self._info(self, access = access)
-                except FileNotFoundError:
-                    if self.exists:
-                        raise PermissionError(self.name)
-                    else:
-                        return None
-                except PermissionError:
-                    raise PermissionError(self.name)
-
-
-
     @property
     def value(self):
         return self.info[1]
@@ -586,7 +586,7 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_USERS()
+    hh = HKEY.HKEY_LOCAL_MACHINE()
 
 
 
@@ -607,10 +607,9 @@ if __name__ == "__main__":
     inventor = found["inventor"]
     acad = found["acad"]
 
-    try:
-        for k in autocad:
-            print(k.value)
-    except OSError:
-        pass
+    for a in autodesk:
+        a.delete(False)
 
+    for a in autocad:
+        print(a.value)
 
