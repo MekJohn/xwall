@@ -262,7 +262,6 @@ class ABC:
         name = self.address.name.encode(errors = "ignore").decode()
         return f"<ABC '{name}'>"
 
-
     @property
     def name(self):
         return self.address.name
@@ -297,6 +296,7 @@ class ABC:
         with winreg.OpenKey(*self.address.location) as k:
             n_keys, n_values, mtime = winreg.QueryInfoKey(k)
             return n_keys, n_values, mtime
+
 
     @property
     def mtime(self):
@@ -393,7 +393,7 @@ class FKEY(ABC):
             return print(f"Error: {err}")
 
 
-    def delete(self, preview = True):
+    def delete(self, preview: bool = True, *access: object):
         if self.subf:
             for k in self.subf:
                 k.delete(preview = preview)
@@ -413,20 +413,31 @@ class FKEY(ABC):
             print(f"GeneralError: {e}")
             return False
 
-    def delete_tree(self, preview = True):
-        items_to_delete = [self] + list(self.walk())
-        items_to_delete.reverse()
 
-        while items_to_delete:
-            for i, item in enumerate(items_to_delete):
-                deleted = item.delete(preview = preview)
-                if deleted:
-                    items_to_delete.pop(i)
-                    break
-                else:
-                    subitems = list(item.walk())
-                    items_to_delete.extend(subitems)
-        return False if items_to_delete else True
+    def search(self, function: object = None, instances: list = None):
+        instances = HKEY, FKEY, EKEY
+        if instances: instances = tuple(ins for ins in instances)
+
+        for i, k in enumerate(self.walk()):
+            if isinstance(k, instances):
+                print(i, k)
+                if function(k):
+                    yield k
+
+    # def delete_tree(self, preview = True):
+    #     items_to_delete = [self] + list(self.walk())
+    #     items_to_delete.reverse()
+
+    #     while items_to_delete:
+    #         for i, item in enumerate(items_to_delete):
+    #             deleted = item.delete(preview = preview)
+    #             if deleted:
+    #                 items_to_delete.pop(i)
+    #                 break
+    #             else:
+    #                 subitems = list(item.walk())
+    #                 items_to_delete.extend(subitems)
+    #     return False if items_to_delete else True
 
 
 
@@ -439,11 +450,39 @@ class EKEY(ABC):
         name = self.address.name.encode(errors = "ignore").decode()
         return f"<EKEY '{name}'>"
 
+
+    @staticmethod
+    def _info(key, access: object = None):
+        access = winreg.KEY_READ if access is None else access
+        h, p = k.parent.address.location
+        with winreg.OpenKey(h, p, 0, access) as p:
+            value, type_ = winreg.QueryValueEx(p, k.name)
+            return k.name, value, type_
+
+
     @property
     def info(self):
-        with winreg.OpenKey(*self.address.location) as k:
-            value, type_ = winreg.QueryValueEx(k, self.name)
-            return self.name, value, type_
+        # TODO
+        try:
+            access = winreg.KEY_READ | winreg.KEY_WOW64_64KEY
+            return self._info(self, access = access)
+        except FileNotFoundError:
+            try:
+                access = winreg.KEY_READ | winreg.KEY_WOW64_32KEY
+                return self._info(self, access = access)
+            except FileNotFoundError:
+                try:
+                    access = winreg.KEY_ALL_ACCESS
+                    return self._info(self, access = access)
+                except FileNotFoundError:
+                    if self.exists:
+                        raise PermissionError(self.name)
+                    else:
+                        return None
+                except PermissionError:
+                    raise PermissionError(self.name)
+
+
 
     @property
     def value(self):
@@ -547,15 +586,31 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_CLASSES_ROOT()
+    hh = HKEY.HKEY_USERS()
 
 
 
-    terms = "autocad", "autolisp", "autodesk", "acad"
+    terms = "autocad", "autolisp", "autodesk", "acad", "inventor"
     found = {t: [] for t in terms}
     for i, k in enumerate(hh.walk()):
         print(i, k)
         for t in terms:
             if t in k.name.lower():
                 found[t].append(k)
+            if isinstance(k, EKEY):
+                if k.value and t in str(k.value).lower():
+                    found[t].append(k)
+
+    autocad = found["autocad"]
+    autolisp = found["autolisp"]
+    autodesk = found["autodesk"]
+    inventor = found["inventor"]
+    acad = found["acad"]
+
+    try:
+        for k in autocad:
+            print(k.value)
+    except OSError:
+        pass
+
 
