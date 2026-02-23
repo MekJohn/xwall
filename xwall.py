@@ -586,11 +586,11 @@ if __name__ == "__main__":
 
     found = []
     func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_LOCAL_MACHINE()
+    hh = HKEY.HKEY_USERS()
 
 
 
-    terms = "autocad", "autolisp", "autodesk", "acad", "inventor"
+    terms = "autocad", "autolisp", "autodesk", "acad.exe", "plant3d"
     found = {t: [] for t in terms}
     for i, k in enumerate(hh.walk()):
         print(i, k)
@@ -604,12 +604,7 @@ if __name__ == "__main__":
     autocad = found["autocad"]
     autolisp = found["autolisp"]
     autodesk = found["autodesk"]
-    inventor = found["inventor"]
-    acad = found["acad"]
+    plant = found["plant3d"]
+    acad = found["acad.exe"]
 
-    for a in autodesk:
-        a.delete(False)
-
-    for a in autocad:
-        print(a.value)
 
