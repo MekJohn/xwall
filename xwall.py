@@ -583,28 +583,6 @@ class HKEY(FKEY):
 if __name__ == "__main__":
 
     # utility.run_as_admin()
-
-    found = []
-    func = lambda x: "autocad" in x.name.lower()
-    hh = HKEY.HKEY_USERS()
-
-
-
-    terms = "autocad", "autolisp", "autodesk", "acad.exe", "plant3d"
-    found = {t: [] for t in terms}
-    for i, k in enumerate(hh.walk()):
-        print(i, k)
-        for t in terms:
-            if t in k.name.lower():
-                found[t].append(k)
-            if isinstance(k, EKEY):
-                if k.value and t in str(k.value).lower():
-                    found[t].append(k)
-
-    autocad = found["autocad"]
-    autolisp = found["autolisp"]
-    autodesk = found["autodesk"]
-    plant = found["plant3d"]
-    acad = found["acad.exe"]
+    pass
 
 
